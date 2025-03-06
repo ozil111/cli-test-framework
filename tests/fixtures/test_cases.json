@@ -1,0 +1,22 @@
+{
+  "test_cases": [
+    {
+      "name": "Test Case 1",
+      "command": "echo",
+      "args": ["Hello, World!"],
+      "expected": {
+        "output_contains": ["Hello, World!"],
+        "return_code": 0
+      }
+    },
+    {
+      "name": "Test Case 2",
+      "command": "ls",
+      "args": ["non_existent_file"],
+      "expected": {
+        "output_contains": ["No such file or directory"],
+        "return_code": 1
+      }
+    }
+  ]
+}
