@@ -3,8 +3,8 @@ from setuptools import setup, find_packages
 setup(
     name="cli-test-framework",
     version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Xiaotong Wang",
+    author_email="xiaotongwang98@gmail.com",
     description="A small command line testing framework in Python.",
     packages=find_packages(where="src"),
     package_dir={"": "src"},

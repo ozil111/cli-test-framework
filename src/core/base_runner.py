@@ -30,15 +30,24 @@ class BaseRunner(ABC):
         self.load_test_cases()
         self.results["total"] = len(self.test_cases)
         
-        for case in self.test_cases:
+        print(f"\nStarting test execution... Total tests: {self.results['total']}")
+        print("=" * 50)
+        
+        for i, case in enumerate(self.test_cases, 1):
+            print(f"\nRunning test {i}/{self.results['total']}: {case.name}")
             result = self.run_single_test(case)
-            # print("result: ", result)
             self.results["details"].append(result)
             if result["status"] == "passed":
                 self.results["passed"] += 1
+                print(f"✓ Test passed: {case.name}")
             else:
                 self.results["failed"] += 1
+                print(f"✗ Test failed: {case.name}")
+                if result["message"]:
+                    print(f"  Error: {result['message']}")
                 
+        print("\n" + "=" * 50)
+        print(f"Test execution completed. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
         return self.results["failed"] == 0
 
     @abstractmethod

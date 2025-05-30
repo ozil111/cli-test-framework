@@ -1,22 +1,57 @@
 {
   "test_cases": [
     {
-      "name": "Test Case 1",
-      "command": "echo",
-      "args": ["Hello, World!"],
+      "name": "测试Python版本",
+      "command": "python",
+      "args": ["--version"],
       "expected": {
-        "output_contains": ["Hello, World!"],
+        "return_code": 0,
+        "output_contains": ["Python"]
+      }
+    },
+    {
+      "name": "测试目录列表",
+      "command": "dir",
+      "args": ["."],
+      "expected": {
+        "return_code": 0,
+        "output_contains": ["src"]
+      }
+    },
+    {
+      "name": "测试echo命令",
+      "command": "echo",
+      "args": ["Hello World"],
+      "expected": {
+        "return_code": 0,
+        "output_contains": ["Hello World"]
+      }
+    },
+    {
+      "name": "测试ping本地回环",
+      "command": "ping",
+      "args": ["-n", "1", "127.0.0.1"],
+      "expected": {
+        "return_code": 0,
+        "output_contains": ["127.0.0.1"]
+      }
+    },
+    {
+      "name": "测试时间命令",
+      "command": "echo",
+      "args": ["%time%"],
+      "expected": {
         "return_code": 0
       }
     },
     {
-      "name": "Test Case 2",
-      "command": "ls",
-      "args": ["non_existent_file"],
+      "name": "测试文件存在性",
+      "command": "dir",
+      "args": ["src"],
       "expected": {
-        "output_contains": ["No such file or directory"],
-        "return_code": 1
+        "return_code": 0,
+        "output_contains": ["core", "runners"]
       }
     }
   ]
-}
+} 

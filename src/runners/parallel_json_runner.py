@@ -1,37 +1,51 @@
 from typing import Optional, Dict, Any
-from ..core.base_runner import BaseRunner
+from ..core.parallel_runner import ParallelRunner
 from ..core.test_case import TestCase
 from ..utils.path_resolver import PathResolver
+import json
 import subprocess
 import sys
+import threading
 
-class YAMLRunner(BaseRunner):
-    def __init__(self, config_file="test_cases.yaml", workspace: Optional[str] = None):
-        super().__init__(config_file, workspace)
+class ParallelJSONRunner(ParallelRunner):
+    """并行JSON测试运行器"""
+    
+    def __init__(self, config_file="test_cases.json", workspace: Optional[str] = None,
+                 max_workers: Optional[int] = None, execution_mode: str = "thread"):
+        """
+        初始化并行JSON运行器
+        
+        Args:
+            config_file: JSON配置文件路径
+            workspace: 工作目录
+            max_workers: 最大并发数
+            execution_mode: 执行模式，'thread' 或 'process'
+        """
+        super().__init__(config_file, workspace, max_workers, execution_mode)
         self.path_resolver = PathResolver(self.workspace)
+        self._print_lock = threading.Lock()  # 用于控制输出顺序
 
-    def load_test_cases(self):
-        """Load test cases from a YAML file."""
+    def load_test_cases(self) -> None:
+        """从JSON文件加载测试用例"""
         try:
-            import yaml
             with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-                
+                config = json.load(f)
+
             required_fields = ["name", "command", "args", "expected"]
             for case in config["test_cases"]:
                 if not all(field in case for field in required_fields):
                     raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
-                
+
                 case["command"] = self.path_resolver.parse_command_string(case["command"])
                 case["args"] = self.path_resolver.resolve_paths(case["args"])
                 self.test_cases.append(TestCase(**case))
-                
+
             print(f"Successfully loaded {len(self.test_cases)} test cases")
         except Exception as e:
             sys.exit(f"Failed to load configuration file: {str(e)}")
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
-        """Run a single test case and return the result"""
+        """运行单个测试用例（线程安全版本）"""
         result = {
             "name": case.name,
             "status": "failed",
@@ -44,7 +58,10 @@ class YAMLRunner(BaseRunner):
         try:
             command = f"{case.command} {' '.join(case.args)}"
             result["command"] = command
-            print(f"  Executing command: {command}")
+            
+            # 线程安全的输出
+            with self._print_lock:
+                print(f"  [Worker] Executing command: {command}")
             
             process = subprocess.run(
                 command,
@@ -59,28 +76,33 @@ class YAMLRunner(BaseRunner):
             result["output"] = output
             result["return_code"] = process.returncode
             
+            # 线程安全的输出
             if output.strip():
-                print("  Command output:")
-                for line in output.splitlines():
-                    print(f"    {line}")
+                with self._print_lock:
+                    print(f"  [Worker] Command output for {case.name}:")
+                    for line in output.splitlines():
+                        print(f"    {line}")
 
-            # Check return code
+            # 检查返回码
             if "return_code" in case.expected:
-                print(f"  Checking return code: {process.returncode} (expected: {case.expected['return_code']})")
+                with self._print_lock:
+                    print(f"  [Worker] Checking return code for {case.name}: {process.returncode} (expected: {case.expected['return_code']})")
                 self.assertions.return_code_equals(
                     process.returncode,
                     case.expected["return_code"]
                 )
 
-            # Check output contains
+            # 检查输出包含
             if "output_contains" in case.expected:
-                print("  Checking output contains expected text...")
+                with self._print_lock:
+                    print(f"  [Worker] Checking output contains for {case.name}...")
                 for expected_text in case.expected["output_contains"]:
                     self.assertions.contains(output, expected_text)
 
-            # Check regex patterns
+            # 检查正则匹配
             if "output_matches" in case.expected:
-                print("  Checking output matches regex pattern...")
+                with self._print_lock:
+                    print(f"  [Worker] Checking output matches regex for {case.name}...")
                 self.assertions.matches(output, case.expected["output_matches"])
 
             result["status"] = "passed"
@@ -90,4 +112,4 @@ class YAMLRunner(BaseRunner):
         except Exception as e:
             result["message"] = f"Execution error: {str(e)}"
 
-        return result
+        return result 

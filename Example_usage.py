@@ -11,6 +11,7 @@ def main():
     # Generate and save the report
     report_generator = ReportGenerator(runner.results, "D:/Document/xcode/Compare-File-Tool/test_script/test_report.txt")
     report_generator.print_report()
+    report_generator.save_report()
     
     sys.exit(0 if success else 1)
 
