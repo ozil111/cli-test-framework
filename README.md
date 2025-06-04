@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support.
+This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support and advanced file comparison features.
 
 ## 2. Features
 
@@ -16,13 +16,14 @@ This is a lightweight and extensible automated testing framework that supports d
 - **🔒 Isolated Execution Environment**: Independent sub-process execution ensures test isolation
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
+- **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
 
 ## 3. Quick Start
 
 ### Environment Requirements
 
 ```bash
-pip install -r requirements.txt
+pip install cli-test-framework
 Python >= 3.6
 ```
 
@@ -38,7 +39,7 @@ runner = JSONRunner(
 success = runner.run_tests()
 ```
 
-### Parallel Execution (NEW!)
+### Parallel Execution
 
 ```python
 from src.runners.parallel_json_runner import ParallelJSONRunner
@@ -51,21 +52,22 @@ runner = ParallelJSONRunner(
     execution_mode="thread"  # "thread" or "process"
 )
 success = runner.run_tests()
-
-# Performance comparison example
-python parallel_example.py
 ```
 
-### YAML Support
+### File Comparison
 
-```python
-from src.runners.yaml_runner import YAMLRunner
+```bash
+# Compare two text files
+compare-files file1.txt file2.txt
 
-runner = YAMLRunner(
-    config_file="path/to/test_cases.yaml",
-    workspace="/project/root"
-)
-success = runner.run_tests()
+# Compare JSON files with key-based comparison
+compare-files data1.json data2.json --json-compare-mode key-based --json-key-field id
+
+# Compare HDF5 files with specific options
+compare-files data1.h5 data2.h5 --h5-table table1,table2 --h5-rtol 1e-6
+
+# Compare binary files with similarity check
+compare-files binary1.bin binary2.bin --similarity
 ```
 
 ## 4. Test Case Format
@@ -77,7 +79,7 @@ success = runner.run_tests()
     "test_cases": [
         {
             "name": "File Comparison Test",
-            "command": "python ./compare_files.py",
+            "command": "compare-files",
             "args": ["file1.txt", "file2.txt", "--verbose"],
             "expected": {
                 "return_code": 0,
@@ -103,67 +105,53 @@ test_cases:
       output_matches: ".*\\.md$"
 ```
 
-### Supported Command Formats
+## 5. File Comparison Features
 
-The framework intelligently handles various command formats:
+### Supported File Types
 
-```json
-{
-    "command": "echo",                    // Simple command
-    "command": "python script.py",       // Command with script
-    "command": "node ./app.js --port",   // Complex command with flags
-}
-```
+- **Text Files**: Plain text, source code, markdown, etc.
+- **JSON Files**: With exact or key-based comparison
+- **HDF5 Files**: Structure and content comparison with numerical tolerance
+- **Binary Files**: With optional similarity index calculation
 
-## 5. Parallel Testing
+### Comparison Options
 
-### Performance Benefits
-
-Parallel execution provides significant performance improvements:
-
+#### Text Comparison
 ```bash
-# Run performance comparison
-python parallel_example.py
-
-# Typical output:
-# Sequential execution:    12.45 seconds
-# Parallel execution (thread): 3.21 seconds (3.88x speedup)
-# Parallel execution (process): 4.12 seconds (3.02x speedup)
+compare-files file1.txt file2.txt \
+    --start-line 10 \
+    --end-line 20 \
+    --encoding utf-8
 ```
 
-### Execution Modes
-
-#### Thread Mode (Recommended)
-- **Best for**: I/O-intensive tests (network requests, file operations)
-- **Advantages**: Fast startup, shared memory, suitable for most test scenarios
-- **Recommended workers**: CPU cores × 2-4
-
-```python
-runner = ParallelJSONRunner(
-    config_file="test_cases.json",
-    max_workers=4,
-    execution_mode="thread"
-)
+#### JSON Comparison
+```bash
+compare-files data1.json data2.json \
+    --json-compare-mode key-based \
+    --json-key-field id,name
 ```
 
-#### Process Mode
-- **Best for**: CPU-intensive tests, complete isolation requirements
-- **Advantages**: Complete isolation, bypasses GIL limitations
-- **Recommended workers**: CPU cores
-
-```python
-runner = ParallelJSONRunner(
-    config_file="test_cases.json",
-    max_workers=2,
-    execution_mode="process"
-)
+#### HDF5 Comparison
+```bash
+compare-files data1.h5 data2.h5 \
+    --h5-table table1,table2 \
+    --h5-structure-only \
+    --h5-rtol 1e-5 \
+    --h5-atol 1e-8
 ```
 
-### Thread Safety Features
+#### Binary Comparison
+```bash
+compare-files binary1.bin binary2.bin \
+    --similarity \
+    --chunk-size 16384
+```
 
-- **Result Collection Lock**: `threading.Lock()` protects shared result data
-- **Output Control Lock**: Prevents concurrent output confusion
-- **Exception Isolation**: Individual test failures don't affect others
+### Output Formats
+
+- **Text**: Human-readable diff output
+- **JSON**: Structured comparison results
+- **HTML**: Visual diff with syntax highlighting
 
 ## 6. System Architecture
 
@@ -182,6 +170,10 @@ graph TD
     H --> I[Assertion Engine]
     I --> J[Thread-Safe Result Collection]
     J --> K[Report Generator]
+    L[File Comparator] --> M[Text Comparator]
+    L --> N[JSON Comparator]
+    L --> O[HDF5 Comparator]
+    L --> P[Binary Comparator]
 ```
 
 ### Core Components
@@ -413,6 +405,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**🚀 Ready to supercharge your testing workflow with parallel execution!**
+**🚀 Ready to supercharge your testing workflow with parallel execution and advanced file comparison!**
 
 For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](PARALLEL_TESTING_GUIDE.md)
