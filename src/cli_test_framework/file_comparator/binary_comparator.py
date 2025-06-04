@@ -150,35 +150,24 @@ class BinaryComparator(BaseComparator):
         @param a bytes: First binary sequence
         @param b bytes: Second binary sequence
         @return int: Length of the longest common subsequence
-        @details Uses dynamic programming with memory optimization to compute LCS.
-                 Supports parallel processing for large sequences.
+        @details Uses dynamic programming to compute LCS accurately.
         """
         if not a or not b:
             return 0
 
-        def lcs_worker(start, end):
-            previous = [0] * (len(b) + 1)
-            for i in range(start, end):
-                current = [0] * (len(b) + 1)
-                for j in range(1, len(b) + 1):
-                    if a[i - 1] == b[j - 1]:
-                        current[j] = previous[j - 1] + 1
-                    else:
-                        current[j] = max(previous[j], current[j - 1])
-                previous = current
-            return previous[len(b)]
+        # Initialize a 2D array for dynamic programming
+        dp = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
 
-        chunk_size = len(a) // self.num_threads
-        futures = []
+        # Fill the DP table
+        for i in range(1, len(a) + 1):
+            for j in range(1, len(b) + 1):
+                if a[i - 1] == b[j - 1]:
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                else:
+                    dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
 
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            for i in range(self.num_threads):
-                start = i * chunk_size
-                end = (i + 1) * chunk_size if i != self.num_threads - 1 else len(a)
-                futures.append(executor.submit(lcs_worker, start, end))
-
-        lcs_length = sum(f.result() for f in futures)
-        return lcs_length
+        # The bottom-right cell contains the LCS length
+        return dp[len(a)][len(b)]
 
     def compare_files(self, file1, file2, start_line=0, end_line=None, start_column=0, end_column=None):
         """
