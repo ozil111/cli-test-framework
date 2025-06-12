@@ -5,12 +5,13 @@
 2. [Installation](#installation)
 3. [Basic Usage](#basic-usage)
 4. [Test Case Definition](#test-case-definition)
-5. [Parallel Testing](#parallel-testing)
-6. [File Comparison](#file-comparison)
-7. [Advanced Features](#advanced-features)
-8. [Troubleshooting](#troubleshooting)
-9. [API Reference](#api-reference)
-10. [Examples](#examples)
+5. [Setup Module](#setup-module)
+6. [Parallel Testing](#parallel-testing)
+7. [File Comparison](#file-comparison)
+8. [Advanced Features](#advanced-features)
+9. [Troubleshooting](#troubleshooting)
+10. [API Reference](#api-reference)
+11. [Examples](#examples)
 
 ## Introduction
 
@@ -36,7 +37,7 @@ pip install cli-test-framework
 
 ### Development Installation
 ```bash
-git clone https://github.com/yourusername/cli-test-framework.git
+git clone https://github.com/ozil111/cli-test-framework.git
 cd cli-test-framework
 pip install -e .
 ```
@@ -120,6 +121,152 @@ test_cases:
       output_matches:
         - ".*regex pattern.*"
 ```
+
+## Setup Module
+
+The Setup Module provides a plugin-based system for executing pre-test setup tasks and post-test cleanup. It's designed to be extensible and supports multiple setup plugins running in sequence.
+
+### Key Features
+- **Plugin Architecture**: Extensible design allowing custom setup plugins
+- **Built-in Environment Plugin**: Set environment variables for tests
+- **Full Runner Support**: Works with JSONRunner, YAMLRunner, and ParallelJSONRunner
+- **Lifecycle Management**: Automatic setup and teardown with proper cleanup
+
+### Environment Variable Setup
+
+#### JSON Configuration
+```json
+{
+  "setup": {
+    "environment_variables": {
+      "TEST_ENV": "development",
+      "DEBUG_MODE": "true",
+      "API_URL": "http://localhost:8080",
+      "DATABASE_URL": "sqlite:///test.db"
+    }
+  },
+  "test_cases": [
+    {
+      "name": "Test with environment variables",
+      "command": "python",
+      "args": ["-c", "import os; print(f'Env: {os.environ.get(\"TEST_ENV\")}')"],
+      "expected": {
+        "return_code": 0,
+        "output_contains": ["Env: development"]
+      }
+    }
+  ]
+}
+```
+
+#### YAML Configuration
+```yaml
+setup:
+  environment_variables:
+    TEST_ENV: "production"
+    DATABASE_URL: "postgresql://localhost:5432/test"
+    MAX_CONNECTIONS: "10"
+    TIMEOUT_SECONDS: "30"
+
+test_cases:
+  - name: "Test database environment"
+    command: "python"
+    args: 
+      - "-c"
+      - "import os; print(f'DB: {os.environ.get(\"DATABASE_URL\")}')"
+    expected:
+      return_code: 0
+      output_contains:
+        - "DB: postgresql://localhost:5432/test"
+```
+
+### Custom Setup Plugins
+
+#### Creating Custom Plugins
+```python
+from cli_test_framework import BaseSetup
+
+class DatabaseSetup(BaseSetup):
+    def setup(self):
+        """Initialize test database"""
+        print("Setting up test database...")
+        # Your database initialization code here
+        
+    def teardown(self):
+        """Clean up test database"""
+        print("Cleaning up test database...")
+        # Your database cleanup code here
+
+class ServiceSetup(BaseSetup):
+    def setup(self):
+        """Start test services"""
+        self.service_port = self.config.get('port', 8080)
+        print(f"Starting test service on port {self.service_port}")
+        # Your service startup code here
+        
+    def teardown(self):
+        """Stop test services"""
+        print("Stopping test services...")
+        # Your service shutdown code here
+```
+
+#### Using Custom Plugins
+```python
+from cli_test_framework import JSONRunner
+
+# Create runner
+runner = JSONRunner("test_cases.json")
+
+# Add custom setup plugins
+db_setup = DatabaseSetup({"connection": "test_db"})
+service_setup = ServiceSetup({"port": 9090})
+
+runner.setup_manager.add_setup(db_setup)
+runner.setup_manager.add_setup(service_setup)
+
+# Run tests (setup will be executed automatically)
+success = runner.run_tests()
+```
+
+### Execution Flow
+
+1. **Load Configuration**: Read setup configuration from test file
+2. **Setup Phase**: Execute all setup plugins in order
+   - Environment variables are set
+   - Custom setups are executed
+   - Setup status is reported
+3. **Test Execution**: Run all test cases with setup environment
+4. **Teardown Phase**: Clean up all setups in reverse order
+   - Environment variables are restored
+   - Custom cleanups are executed
+   - Cleanup is guaranteed even if tests fail
+
+### Best Practices
+
+1. **Idempotent Operations**: Make setup operations safe to run multiple times
+2. **Proper Cleanup**: Always implement teardown to avoid side effects
+3. **Error Handling**: Setup failures stop test execution, teardown failures don't
+4. **Resource Management**: Use try-finally patterns in custom plugins
+5. **Configuration Validation**: Check required configuration parameters in setup
+
+### Integration Examples
+
+#### With JSON Runner
+```bash
+cli-test test_with_setup.json
+```
+
+#### With YAML Runner
+```bash
+cli-test test_with_setup.yaml --runner yaml
+```
+
+#### With Parallel Runner
+```bash
+cli-test test_with_setup.json --runner parallel --max-workers 4
+```
+
+Note: In parallel mode, setup and teardown run in the main thread to ensure environment consistency.
 
 ## Parallel Testing
 

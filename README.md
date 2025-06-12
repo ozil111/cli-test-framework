@@ -7,7 +7,8 @@ This is a lightweight and extensible automated testing framework that supports d
 ## 2. Features
 
 - **🚀 Parallel Test Execution**: Support for multi-threading and multi-processing parallel testing with significant performance improvements
-- **🏗️ Modular Architecture**: Decoupled design of core components (runner/assertion/report)
+- **🔧 Setup Module System**: Plugin-based architecture for pre-test setup tasks (environment variables, database initialization, service startup)
+- **🏗️ Modular Architecture**: Decoupled design of core components (runner/assertion/report/setup)
 - **📄 Multi-Format Support**: Native support for JSON/YAML test case formats
 - **🧠 Intelligent Command Parsing**: Smart handling of complex commands like `"python ./script.py"`
 - **📁 Smart Path Resolution**: Automatic handling of relative and absolute path conversions
@@ -54,6 +55,21 @@ runner = ParallelJSONRunner(
 success = runner.run_tests()
 ```
 
+### Setup Module Usage
+
+```python
+from cli_test_framework import JSONRunner, EnvironmentSetup
+
+# Using built-in environment variable setup
+runner = JSONRunner("test_cases.json")
+env_setup = EnvironmentSetup({
+    "TEST_ENV": "development",
+    "API_URL": "http://localhost:8080"
+})
+runner.setup_manager.add_setup(env_setup)
+success = runner.run_tests()
+```
+
 ### File Comparison
 
 ```bash
@@ -76,9 +92,25 @@ compare-files binary1.bin binary2.bin --similarity
 
 ```json
 {
+    "setup": {
+        "environment_variables": {
+            "TEST_ENV": "development",
+            "API_URL": "http://localhost:8080",
+            "DEBUG_MODE": "true"
+        }
+    },
     "test_cases": [
         {
-            "name": "File Comparison Test",
+            "name": "Environment Variable Test",
+            "command": "python",
+            "args": ["-c", "import os; print(f'Environment: {os.environ.get(\"TEST_ENV\")}')"],
+            "expected": {
+                "return_code": 0,
+                "output_contains": ["Environment: development"]
+            }
+        },
+        {
+            "name": "File Comparison Test", 
             "command": "compare-files",
             "args": ["file1.txt", "file2.txt", "--verbose"],
             "expected": {
@@ -94,7 +126,22 @@ compare-files binary1.bin binary2.bin --similarity
 ### YAML Format
 
 ```yaml
+setup:
+  environment_variables:
+    TEST_ENV: "production"
+    DATABASE_URL: "sqlite:///test.db"
+
 test_cases:
+  - name: Environment Test
+    command: python
+    args:
+      - "-c"
+      - "import os; print(f'DB: {os.environ.get(\"DATABASE_URL\")}')"
+    expected:
+      return_code: 0
+      output_contains:
+        - "DB: sqlite:///test.db"
+  
   - name: Directory Scan Test
     command: ls
     args:
@@ -405,6 +452,22 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**🚀 Ready to supercharge your testing workflow with parallel execution and advanced file comparison!**
+## 📚 Complete Documentation
 
-For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](PARALLEL_TESTING_GUIDE.md)
+For comprehensive documentation including detailed Setup Module guide, API reference, and advanced usage examples, see:
+
+**[📖 Complete User Manual](https://github.com/ozil111/cli-test-framework/blob/main/docs/user_manual.md)**
+
+The user manual includes:
+- 🔧 **Setup Module**: Complete guide for environment variables and custom plugins
+- 🚀 **Parallel Testing**: Advanced parallel execution strategies  
+- 📁 **File Comparison**: Detailed comparison capabilities for all file types
+- 🔌 **API Reference**: Full API documentation and examples
+- 🛠️ **Troubleshooting**: Common issues and solutions
+- 📝 **Best Practices**: Recommended patterns and configurations
+
+---
+
+**🚀 Ready to supercharge your testing workflow with setup modules, parallel execution and advanced file comparison!**
+
+For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](https://github.com/ozil111/cli-test-framework/blob/main/PARALLEL_TESTING_GUIDE.md)
