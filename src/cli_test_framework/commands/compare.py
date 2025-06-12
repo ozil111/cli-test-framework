@@ -73,10 +73,10 @@ def parse_arguments():
 def detect_file_type(file_path):
     """Detect the type of file based on its extension"""
     ext = file_path.suffix.lower()
-    if ext == '.json':
-        return 'json'
-    elif ext in ['.txt', '.py', '.md', '.xml', '.html', '.css', '.js']:
+    if ext in ['.txt', '.py', '.md', '.json', '.xml', '.html', '.css', '.js']:
         return 'text'
+    elif ext == '.json':
+        return 'json'
     elif ext in ['.h5', '.hdf5']:
         return 'h5'
     else:

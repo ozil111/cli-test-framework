@@ -3,11 +3,13 @@
 ## 1. Overview
 
 This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support and advanced file comparison features.
+This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support and advanced file comparison features.
 
 ## 2. Features
 
 - **🚀 Parallel Test Execution**: Support for multi-threading and multi-processing parallel testing with significant performance improvements
-- **🏗️ Modular Architecture**: Decoupled design of core components (runner/assertion/report)
+- **🔧 Setup Module System**: Plugin-based architecture for pre-test setup tasks (environment variables, database initialization, service startup)
+- **🏗️ Modular Architecture**: Decoupled design of core components (runner/assertion/report/setup)
 - **📄 Multi-Format Support**: Native support for JSON/YAML test case formats
 - **🧠 Intelligent Command Parsing**: Smart handling of complex commands like `"python ./script.py"`
 - **📁 Smart Path Resolution**: Automatic handling of relative and absolute path conversions
@@ -17,12 +19,14 @@ This is a lightweight and extensible automated testing framework that supports d
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
 - **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
+- **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
 
 ## 3. Quick Start
 
 ### Environment Requirements
 
 ```bash
+pip install cli-test-framework
 pip install cli-test-framework
 Python >= 3.6
 ```
@@ -40,6 +44,7 @@ success = runner.run_tests()
 ```
 
 ### Parallel Execution
+### Parallel Execution
 
 ```python
 from src.runners.parallel_json_runner import ParallelJSONRunner
@@ -51,6 +56,21 @@ runner = ParallelJSONRunner(
     max_workers=4,           # Maximum concurrent workers
     execution_mode="thread"  # "thread" or "process"
 )
+success = runner.run_tests()
+```
+
+### Setup Module Usage
+
+```python
+from cli_test_framework import JSONRunner, EnvironmentSetup
+
+# Using built-in environment variable setup
+runner = JSONRunner("test_cases.json")
+env_setup = EnvironmentSetup({
+    "TEST_ENV": "development",
+    "API_URL": "http://localhost:8080"
+})
+runner.setup_manager.add_setup(env_setup)
 success = runner.run_tests()
 ```
 
@@ -76,9 +96,25 @@ compare-files binary1.bin binary2.bin --similarity
 
 ```json
 {
+    "setup": {
+        "environment_variables": {
+            "TEST_ENV": "development",
+            "API_URL": "http://localhost:8080",
+            "DEBUG_MODE": "true"
+        }
+    },
     "test_cases": [
         {
-            "name": "File Comparison Test",
+            "name": "Environment Variable Test",
+            "command": "python",
+            "args": ["-c", "import os; print(f'Environment: {os.environ.get(\"TEST_ENV\")}')"],
+            "expected": {
+                "return_code": 0,
+                "output_contains": ["Environment: development"]
+            }
+        },
+        {
+            "name": "File Comparison Test", 
             "command": "compare-files",
             "args": ["file1.txt", "file2.txt", "--verbose"],
             "expected": {
@@ -94,7 +130,22 @@ compare-files binary1.bin binary2.bin --similarity
 ### YAML Format
 
 ```yaml
+setup:
+  environment_variables:
+    TEST_ENV: "production"
+    DATABASE_URL: "sqlite:///test.db"
+
 test_cases:
+  - name: Environment Test
+    command: python
+    args:
+      - "-c"
+      - "import os; print(f'DB: {os.environ.get(\"DATABASE_URL\")}')"
+    expected:
+      return_code: 0
+      output_contains:
+        - "DB: sqlite:///test.db"
+  
   - name: Directory Scan Test
     command: ls
     args:
@@ -105,6 +156,26 @@ test_cases:
       output_matches: ".*\\.md$"
 ```
 
+## 5. File Comparison Features
+
+### Supported File Types
+
+- **Text Files**: Plain text, source code, markdown, etc.
+- **JSON Files**: With exact or key-based comparison
+- **HDF5 Files**: Structure and content comparison with numerical tolerance
+- **Binary Files**: With optional similarity index calculation
+
+### Comparison Options
+
+#### Text Comparison
+```bash
+compare-files file1.txt file2.txt \
+    --start-line 10 \
+    --end-line 20 \
+    --encoding utf-8
+```
+
+#### JSON Comparison
 ## 5. File Comparison Features
 
 ### Supported File Types
@@ -138,8 +209,25 @@ compare-files data1.h5 data2.h5 \
     --h5-structure-only \
     --h5-rtol 1e-5 \
     --h5-atol 1e-8
+compare-files data1.json data2.json \
+    --json-compare-mode key-based \
+    --json-key-field id,name
 ```
 
+#### HDF5 Comparison
+```bash
+compare-files data1.h5 data2.h5 \
+    --h5-table table1,table2 \
+    --h5-structure-only \
+    --h5-rtol 1e-5 \
+    --h5-atol 1e-8
+```
+
+#### Binary Comparison
+```bash
+compare-files binary1.bin binary2.bin \
+    --similarity \
+    --chunk-size 16384
 #### Binary Comparison
 ```bash
 compare-files binary1.bin binary2.bin \
@@ -148,7 +236,11 @@ compare-files binary1.bin binary2.bin \
 ```
 
 ### Output Formats
+### Output Formats
 
+- **Text**: Human-readable diff output
+- **JSON**: Structured comparison results
+- **HTML**: Visual diff with syntax highlighting
 - **Text**: Human-readable diff output
 - **JSON**: Structured comparison results
 - **HTML**: Visual diff with syntax highlighting
@@ -170,6 +262,10 @@ graph TD
     H --> I[Assertion Engine]
     I --> J[Thread-Safe Result Collection]
     J --> K[Report Generator]
+    L[File Comparator] --> M[Text Comparator]
+    L --> N[JSON Comparator]
+    L --> O[HDF5 Comparator]
+    L --> P[Binary Comparator]
     L[File Comparator] --> M[Text Comparator]
     L --> N[JSON Comparator]
     L --> O[HDF5 Comparator]
@@ -405,6 +501,22 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**🚀 Ready to supercharge your testing workflow with parallel execution and advanced file comparison!**
+## 📚 Complete Documentation
 
-For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](PARALLEL_TESTING_GUIDE.md)
+For comprehensive documentation including detailed Setup Module guide, API reference, and advanced usage examples, see:
+
+**[📖 Complete User Manual](https://github.com/ozil111/cli-test-framework/blob/main/docs/user_manual.md)**
+
+The user manual includes:
+- 🔧 **Setup Module**: Complete guide for environment variables and custom plugins
+- 🚀 **Parallel Testing**: Advanced parallel execution strategies  
+- 📁 **File Comparison**: Detailed comparison capabilities for all file types
+- 🔌 **API Reference**: Full API documentation and examples
+- 🛠️ **Troubleshooting**: Common issues and solutions
+- 📝 **Best Practices**: Recommended patterns and configurations
+
+---
+
+**🚀 Ready to supercharge your testing workflow with setup modules, parallel execution and advanced file comparison!**
+
+For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](https://github.com/ozil111/cli-test-framework/blob/main/PARALLEL_TESTING_GUIDE.md)
