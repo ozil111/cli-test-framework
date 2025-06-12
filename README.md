@@ -3,6 +3,7 @@
 ## 1. Overview
 
 This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support and advanced file comparison features.
+This is a lightweight and extensible automated testing framework that supports defining test cases via JSON/YAML formats, providing complete test execution, result verification, and report generation capabilities. The framework is designed to provide standardized test management for command-line tools and scripts, with enterprise-grade parallel execution support and advanced file comparison features.
 
 ## 2. Features
 
@@ -18,12 +19,14 @@ This is a lightweight and extensible automated testing framework that supports d
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
 - **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
+- **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
 
 ## 3. Quick Start
 
 ### Environment Requirements
 
 ```bash
+pip install cli-test-framework
 pip install cli-test-framework
 Python >= 3.6
 ```
@@ -40,6 +43,7 @@ runner = JSONRunner(
 success = runner.run_tests()
 ```
 
+### Parallel Execution
 ### Parallel Execution
 
 ```python
@@ -172,7 +176,39 @@ compare-files file1.txt file2.txt \
 ```
 
 #### JSON Comparison
+## 5. File Comparison Features
+
+### Supported File Types
+
+- **Text Files**: Plain text, source code, markdown, etc.
+- **JSON Files**: With exact or key-based comparison
+- **HDF5 Files**: Structure and content comparison with numerical tolerance
+- **Binary Files**: With optional similarity index calculation
+
+### Comparison Options
+
+#### Text Comparison
 ```bash
+compare-files file1.txt file2.txt \
+    --start-line 10 \
+    --end-line 20 \
+    --encoding utf-8
+```
+
+#### JSON Comparison
+```bash
+compare-files data1.json data2.json \
+    --json-compare-mode key-based \
+    --json-key-field id,name
+```
+
+#### HDF5 Comparison
+```bash
+compare-files data1.h5 data2.h5 \
+    --h5-table table1,table2 \
+    --h5-structure-only \
+    --h5-rtol 1e-5 \
+    --h5-atol 1e-8
 compare-files data1.json data2.json \
     --json-compare-mode key-based \
     --json-key-field id,name
@@ -192,10 +228,19 @@ compare-files data1.h5 data2.h5 \
 compare-files binary1.bin binary2.bin \
     --similarity \
     --chunk-size 16384
+#### Binary Comparison
+```bash
+compare-files binary1.bin binary2.bin \
+    --similarity \
+    --chunk-size 16384
 ```
 
 ### Output Formats
+### Output Formats
 
+- **Text**: Human-readable diff output
+- **JSON**: Structured comparison results
+- **HTML**: Visual diff with syntax highlighting
 - **Text**: Human-readable diff output
 - **JSON**: Structured comparison results
 - **HTML**: Visual diff with syntax highlighting
@@ -217,6 +262,10 @@ graph TD
     H --> I[Assertion Engine]
     I --> J[Thread-Safe Result Collection]
     J --> K[Report Generator]
+    L[File Comparator] --> M[Text Comparator]
+    L --> N[JSON Comparator]
+    L --> O[HDF5 Comparator]
+    L --> P[Binary Comparator]
     L[File Comparator] --> M[Text Comparator]
     L --> N[JSON Comparator]
     L --> O[HDF5 Comparator]

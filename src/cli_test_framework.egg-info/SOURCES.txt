@@ -1,5 +1,7 @@
 CHANGELOG.md
 MANIFEST.in
+CHANGELOG.md
+MANIFEST.in
 README.md
 pyproject.toml
 setup.py
@@ -9,6 +11,8 @@ src/cli_test_framework/cli.py
 src/cli_test_framework.egg-info/PKG-INFO
 src/cli_test_framework.egg-info/SOURCES.txt
 src/cli_test_framework.egg-info/dependency_links.txt
+src/cli_test_framework.egg-info/entry_points.txt
+src/cli_test_framework.egg-info/requires.txt
 src/cli_test_framework.egg-info/entry_points.txt
 src/cli_test_framework.egg-info/requires.txt
 src/cli_test_framework.egg-info/top_level.txt
@@ -44,6 +48,7 @@ tests/test1.py
 tests/test_comprehensive_space.py
 tests/test_parallel_runner.py
 tests/test_parallel_space.py
+tests/test_report.txt
 tests/test_report.txt
 tests/test_runners.py
 tests/test_setup_module.py

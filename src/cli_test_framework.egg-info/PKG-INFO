@@ -30,6 +30,11 @@ Dynamic: description-content-type
 Dynamic: home-page
 Dynamic: project-url
 Dynamic: requires-dist
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: project-url
+Dynamic: requires-dist
 Dynamic: requires-python
 Dynamic: summary
 
