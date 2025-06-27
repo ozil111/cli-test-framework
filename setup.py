@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="cli-test-framework",
-    version="0.3.3",
+    version="0.3.5",
     author="Xiaotong Wang",
     author_email="xiaotongwang98@gmail.com",
     description="A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.",

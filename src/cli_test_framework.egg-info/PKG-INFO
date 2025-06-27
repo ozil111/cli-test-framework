@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: cli-test-framework
-Version: 0.3.3
+Version: 0.3.5
 Summary: A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.
 Home-page: https://github.com/ozil111/cli-test-framework
 Author: Xiaotong Wang
@@ -25,11 +25,6 @@ Requires-Dist: wheel>=0.45.1
 Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
-Dynamic: description
-Dynamic: description-content-type
-Dynamic: home-page
-Dynamic: project-url
-Dynamic: requires-dist
 Dynamic: description
 Dynamic: description-content-type
 Dynamic: home-page
@@ -65,7 +60,7 @@ This is a lightweight and extensible automated testing framework that supports d
 
 ```bash
 pip install cli-test-framework
-Python >= 3.6
+Python >= 3.9
 ```
 
 ### Sequential Execution
@@ -219,12 +214,25 @@ compare-files data1.json data2.json \
 ```
 
 #### HDF5 Comparison
+
+**New Feature**: HDF5 group path expansion! By default, when you specify a group path in `--h5-table`, the comparator will automatically expand and compare all datasets and subgroups within that path.
+
 ```bash
+# Compare specific tables/groups with auto-expansion (default behavior)
 compare-files data1.h5 data2.h5 \
-    --h5-table table1,table2 \
-    --h5-structure-only \
+    --h5-table group1/subgroupA \
     --h5-rtol 1e-5 \
     --h5-atol 1e-8
+
+# Disable auto-expansion to compare only the specified path itself
+compare-files data1.h5 data2.h5 \
+    --h5-table group1 \
+    --h5-no-expand-path
+
+# Use regex patterns (also supports auto-expansion)
+compare-files data1.h5 data2.h5 \
+    --h5-table-regex "group1/.*" \
+    --h5-structure-only
 ```
 
 #### Binary Comparison

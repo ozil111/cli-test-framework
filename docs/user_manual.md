@@ -27,7 +27,7 @@ The CLI Testing Framework is a powerful tool designed for testing command-line a
 ## Installation
 
 ### Prerequisites
-- Python 3.6 or higher
+- Python 3.9 or higher
 - pip package manager
 
 ### Basic Installation
