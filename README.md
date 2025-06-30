@@ -484,3 +484,20 @@ The user manual includes:
 **🚀 Ready to supercharge your testing workflow with setup modules, parallel execution and advanced file comparison!**
 
 For detailed parallel testing guide, see: [PARALLEL_TESTING_GUIDE.md](https://github.com/ozil111/cli-test-framework/blob/main/PARALLEL_TESTING_GUIDE.md)
+
+# 支持数据过滤（New in 0.3.6）
+
+你可以通过 `--h5-data-filter` 选项只比较满足特定条件的数据。例如：
+
+```bash
+# 只比较大于 1e-6 的数据
+compare-files data1.h5 data2.h5 --h5-data-filter '>1e-6'
+
+# 只比较绝对值大于 1e-6 的数据
+compare-files data1.h5 data2.h5 --h5-data-filter 'abs>1e-6'
+
+# 只比较小于等于 0.01 的数据
+compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
+```
+
+支持的表达式包括：`>`, `>=`, `<`, `<=`, `==`，以及 `abs` 前缀（绝对值过滤）。

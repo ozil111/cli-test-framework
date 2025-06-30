@@ -65,7 +65,7 @@ class ComparatorFactory:
         if file_type.lower() == 'h5':
             # H5 comparator accepts specific parameters
             h5_kwargs = {k: v for k, v in kwargs.items()
-                        if k in ['tables', 'table_regex', 'encoding', 'chunk_size', 'verbose', 'structure_only', 'show_content_diff', 'debug', 'rtol', 'atol', 'expand_path']}
+                        if k in ['tables', 'table_regex', 'encoding', 'chunk_size', 'verbose', 'structure_only', 'show_content_diff', 'debug', 'rtol', 'atol', 'expand_path', 'data_filter']}
             return comparator_class(**h5_kwargs)
         elif file_type.lower() == 'binary':
             # Binary comparator accepts all parameters, including num_threads

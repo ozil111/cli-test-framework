@@ -5,7 +5,7 @@ import logging
 import re
 
 class H5Comparator(BaseComparator):
-    def __init__(self, tables=None, table_regex=None, structure_only=False, show_content_diff=False, debug=False, rtol=1e-5, atol=1e-8, expand_path=True, **kwargs):
+    def __init__(self, tables=None, table_regex=None, structure_only=False, show_content_diff=False, debug=False, rtol=1e-5, atol=1e-8, expand_path=True, data_filter=None, **kwargs):
         """
         Initialize H5 comparator
         :param tables: List of table names to compare. If None, compare all tables
@@ -16,6 +16,7 @@ class H5Comparator(BaseComparator):
         :param rtol: Relative tolerance for numerical comparison
         :param atol: Absolute tolerance for numerical comparison
         :param expand_path: If True, expand group paths to compare all sub-items. Defaults to True.
+        :param data_filter: String filter expression for data comparison (e.g., '>1e-6', 'abs>1e-9')
         """
         super().__init__(**kwargs)
         self.tables = tables
@@ -25,12 +26,14 @@ class H5Comparator(BaseComparator):
         self.rtol = rtol
         self.atol = atol
         self.expand_path = expand_path
+        self.data_filter = data_filter
+        self.filter_func = self._parse_filter()
         
         # Set debug level if verbose is enabled
         if kwargs.get('verbose', False) or debug:
             self.logger.setLevel(logging.DEBUG)
             
-        self.logger.debug(f"Initialized H5Comparator with structure_only={structure_only}, show_content_diff={show_content_diff}, rtol={rtol}, atol={atol}, expand_path={expand_path}")
+        self.logger.debug(f"Initialized H5Comparator with structure_only={structure_only}, show_content_diff={show_content_diff}, rtol={rtol}, atol={atol}, expand_path={expand_path}, data_filter={data_filter}")
         if table_regex:
             self.logger.debug(f"Using table regex pattern: {table_regex}")
 
@@ -318,49 +321,60 @@ class H5Comparator(BaseComparator):
                     
                     if isinstance(data1, np.ndarray) and isinstance(data2, np.ndarray):
                         try:
+                            # 应用过滤器
+                            mask1 = self.filter_func(data1) if self.filter_func else np.ones_like(data1, dtype=bool)
+                            mask2 = self.filter_func(data2) if self.filter_func else np.ones_like(data2, dtype=bool)
+                            
+                            # 我们只关心两个文件中都满足条件的位置
+                            combined_mask = mask1 & mask2
+                            
+                            # 过滤后的数据
+                            filtered_data1 = data1[combined_mask]
+                            filtered_data2 = data2[combined_mask]
+                            
+                            if self.filter_func:
+                                self.logger.debug(f"Applied filter to {table_name}: {np.sum(combined_mask)}/{data1.size} elements meet criteria")
+                            
                             # 对于数值类型数据使用 isclose
                             if np.issubdtype(data1.dtype, np.number) and np.issubdtype(data2.dtype, np.number):
-                                equal_mask = np.isclose(data1, data2, equal_nan=True, rtol=self.rtol, atol=self.atol)
-                                if not np.all(equal_mask):
-                                    diff_indices = np.where(~equal_mask)
+                                if not np.all(np.isclose(filtered_data1, filtered_data2, equal_nan=True, rtol=self.rtol, atol=self.atol)):
                                     if self.show_content_diff:
-                                        # Report up to 10 differences
-                                        for idx in zip(*diff_indices)[:10]:
-                                            position = f"{table_name}[{','.join(map(str, idx))}]"
-                                            differences.append(self._create_difference(
-                                                position=position,
-                                                expected=str(data1[idx]),
-                                                actual=str(data2[idx]),
-                                                diff_type="content"
-                                            ))
+                                        # 如果过滤后数据不相等，需要找到原始数据的索引来报告差异
+                                        # 简化处理：直接报告内容不同
+                                        differences.append(self._create_difference(
+                                            position=table_name,
+                                            expected="Same content (after filtering)",
+                                            actual="Content differs (after filtering)",
+                                            diff_type="content"
+                                        ))
                                     else:
                                         # Just report that content differs
                                         differences.append(self._create_difference(
                                             position=table_name,
-                                            expected="Same content",
-                                            actual="Content differs",
+                                            expected="Same content (after filtering)",
+                                            actual="Content differs (after filtering)",
                                             diff_type="content"
                                         ))
                                     identical = False
                             # 对于字符串或其他类型直接比较
                             else:
-                                if not np.array_equal(data1, data2):
+                                if not np.array_equal(filtered_data1, filtered_data2):
                                     if self.show_content_diff:
                                         # For non-numeric arrays, find the first difference
-                                        diff_indices = np.where(data1 != data2)
+                                        diff_indices = np.where(filtered_data1 != filtered_data2)
                                         for idx in zip(*diff_indices)[:10]:
                                             position = f"{table_name}[{','.join(map(str, idx))}]"
                                             differences.append(self._create_difference(
                                                 position=position,
-                                                expected=str(data1[idx]),
-                                                actual=str(data2[idx]),
+                                                expected=str(filtered_data1[idx]),
+                                                actual=str(filtered_data2[idx]),
                                                 diff_type="content"
                                             ))
                                     else:
                                         differences.append(self._create_difference(
                                             position=table_name,
-                                            expected="Same content",
-                                            actual="Content differs",
+                                            expected="Same content (after filtering)",
+                                            actual="Content differs (after filtering)",
                                             diff_type="content"
                                         ))
                                     identical = False
@@ -448,6 +462,43 @@ class H5Comparator(BaseComparator):
         """Create a Difference object"""
         from .result import Difference
         return Difference(position=position, expected=expected, actual=actual, diff_type=diff_type)
+
+    def _parse_filter(self):
+        """Parse data filter string and return a filter function"""
+        if not self.data_filter:
+            return None
+
+        self.logger.debug(f"Parsing data filter: {self.data_filter}")
+        try:
+            # 匹配模式，例如 'abs>0.1', '>=1e-5', '<-10'
+            match = re.match(r"^(abs)?([><]=?|==)([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$", self.data_filter.replace(" ", ""))
+            if not match:
+                self.logger.warning(f"Invalid data filter format: {self.data_filter}. Ignoring filter.")
+                return None
+
+            use_abs, op, value_str = match.groups()
+            value = float(value_str)
+
+            op_map = {
+                '>': np.greater,
+                '>=': np.greater_equal,
+                '<': np.less,
+                '<=': np.less_equal,
+                '==': np.equal
+            }
+
+            def filter_func(data):
+                if not isinstance(data, np.ndarray) or not np.issubdtype(data.dtype, np.number):
+                    return np.ones_like(data, dtype=bool)  # 对于非数字类型，不过滤
+                
+                target_data = np.abs(data) if use_abs else data
+                return op_map[op](target_data, value)
+
+            self.logger.debug(f"Created filter function for pattern: {use_abs or ''}{op}{value}")
+            return filter_func
+        except Exception as e:
+            self.logger.error(f"Failed to parse data filter '{self.data_filter}': {e}. Ignoring filter.")
+            return None
 
 # Register the new comparator
 from .factory import ComparatorFactory

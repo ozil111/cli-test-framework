@@ -321,6 +321,23 @@ compare-files data1.h5 data2.h5 --h5-table table1,table2
 compare-files data1.h5 data2.h5 --h5-rtol 1e-5 --h5-atol 1e-8
 ```
 
+#### Data Filtering (New in 0.3.6)
+
+You can use the `--h5-data-filter` option to only compare data that meets a certain condition. For example:
+
+```bash
+# Only compare values greater than 1e-6
+compare-files data1.h5 data2.h5 --h5-data-filter '>1e-6'
+
+# Only compare absolute values greater than 1e-6
+compare-files data1.h5 data2.h5 --h5-data-filter 'abs>1e-6'
+
+# Only compare values less than or equal to 0.01
+compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
+```
+
+Supported filter expressions: `>`, `>=`, `<`, `<=`, `==`, and `abs` prefix for absolute value filtering.
+
 ### Binary File Comparison
 ```bash
 # Compare with similarity check

@@ -42,6 +42,7 @@ tests/__init__.py
 tests/performance_test.py
 tests/test1.py
 tests/test_comprehensive_space.py
+tests/test_filter_demo.py
 tests/test_parallel_runner.py
 tests/test_parallel_space.py
 tests/test_report.txt

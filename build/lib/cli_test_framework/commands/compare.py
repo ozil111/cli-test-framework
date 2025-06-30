@@ -67,6 +67,10 @@ def parse_arguments():
                          help="Relative tolerance for numerical comparison in HDF5 files")
     h5_group.add_argument("--h5-atol", type=float, default=1e-8,
                          help="Absolute tolerance for numerical comparison in HDF5 files")
+    h5_group.add_argument("--h5-data-filter", type=str,
+                         help="Data filter to apply before comparison. "
+                              "Example: '>1e-6', '<=0.01', 'abs>1e-9'. "
+                              "Filters out data that does not meet the criteria from BOTH files before comparison.")
     h5_group.add_argument("--h5-no-expand-path", dest="h5_expand_path", action="store_false",
                          help="Do not expand HDF5 group paths to compare all sub-items.")
     
@@ -150,6 +154,8 @@ def main():
             comparator_kwargs["show_content_diff"] = args.h5_show_content_diff
             comparator_kwargs["rtol"] = args.h5_rtol
             comparator_kwargs["atol"] = args.h5_atol
+            if args.h5_data_filter:
+                comparator_kwargs["data_filter"] = args.h5_data_filter
             comparator_kwargs["expand_path"] = args.h5_expand_path
         
         if file_type == "binary":
