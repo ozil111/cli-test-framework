@@ -123,31 +123,36 @@ class H5Comparator(BaseComparator):
             
             if self.tables or self.table_regex:
                 # If specific tables or regex pattern is specified
+                regex_patterns = []
                 if self.table_regex:
-                    # If the regex looks like a simple path (no regex metacharacters except . and /),
-                    # escape it to treat it as a literal string
-                    regex_str = self.table_regex
-                    self.logger.debug(f"Original table_regex: {regex_str}")
-                    # Check if it contains regex metacharacters other than . and /
-                    import string
-                    regex_metacharacters = set('[]{}()*+?^$|\\')
-                    if not any(char in regex_str for char in regex_metacharacters):
-                        # Escape dots and other special characters for literal matching
-                        regex_str = re.escape(regex_str)
-                        self.logger.debug(f"Treating table_regex as literal path, escaped: {regex_str}")
-                    else:
-                        self.logger.debug(f"Using table_regex as regular expression: {regex_str}")
-                    regex_pattern = re.compile(regex_str)
-                else:
-                    regex_pattern = None
+                    # Split by comma to support multiple regex patterns
+                    regex_strings = [pattern.strip() for pattern in self.table_regex.split(',')]
+                    self.logger.debug(f"Parsed regex patterns: {regex_strings}")
+                    
+                    for regex_str in regex_strings:
+                        # If the regex looks like a simple path (no regex metacharacters except . and /),
+                        # escape it to treat it as a literal string
+                        self.logger.debug(f"Processing regex pattern: {regex_str}")
+                        # Check if it contains regex metacharacters other than . and /
+                        import string
+                        regex_metacharacters = set('[]{}()*+?^$|\\')
+                        if not any(char in regex_str for char in regex_metacharacters):
+                            # Escape dots and other special characters for literal matching
+                            escaped_regex_str = re.escape(regex_str)
+                            self.logger.debug(f"Treating pattern as literal path, escaped: {escaped_regex_str}")
+                            regex_patterns.append(re.compile(escaped_regex_str))
+                        else:
+                            self.logger.debug(f"Using pattern as regular expression: {regex_str}")
+                            regex_patterns.append(re.compile(regex_str))
                 
                 def should_process(name):
                     if self.tables and name in self.tables:
                         self.logger.debug(f"Matched by tables list: {name}")
                         return True
-                    if regex_pattern and regex_pattern.fullmatch(name):
-                        self.logger.debug(f"Matched by regex: {name}")
-                        return True
+                    for pattern in regex_patterns:
+                        if pattern.fullmatch(name):
+                            self.logger.debug(f"Matched by regex pattern {pattern.pattern}: {name}")
+                            return True
                     return False
                 
                 def process_item(name, item):
@@ -187,7 +192,7 @@ class H5Comparator(BaseComparator):
                             self.logger.error(f"Error processing {table_path}: {str(e)}")
                 
                 # Then process regex pattern if specified
-                if regex_pattern:
+                if regex_patterns:
                     def visit_with_regex(name, obj):
                         self.logger.debug(f"Checking path: {name}")
                         if should_process(name):

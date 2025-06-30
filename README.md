@@ -198,6 +198,11 @@ compare-files data1.h5 data2.h5 \
 compare-files data1.h5 data2.h5 \
     --h5-table-regex "group1/.*" \
     --h5-structure-only
+
+# Use comma-separated table names with regex (New in 0.3.7)
+compare-files data1.h5 data2.h5 \
+    --h5-table-regex "table1,table2,table3" \
+    --h5-rtol 1e-6
 ```
 
 #### Binary Comparison
@@ -501,3 +506,25 @@ compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
 ```
 
 支持的表达式包括：`>`, `>=`, `<`, `<=`, `==`，以及 `abs` 前缀（绝对值过滤）。
+
+# 版本更新日志
+
+## 0.3.7 (Latest)
+
+### 🐛 Bug Fixes
+- **Fixed H5 table regex matching**: `--h5-table-regex=table1,table2` now correctly matches both `table1` and `table2` instead of treating the entire string as a single regex pattern
+- **Enhanced regex pattern support**: Multiple comma-separated table names are now supported in `--h5-table-regex` parameter
+
+### ✨ New Features
+- **Improved HDF5 comparison**: Better handling of multiple table selection with regex patterns
+- **Enhanced debug output**: More detailed logging for HDF5 table matching process
+
+### 🔧 Improvements
+- **Backward compatibility**: All existing functionality remains unchanged
+- **Better error handling**: More informative error messages for regex pattern parsing
+
+## 0.3.6
+
+### ✨ New Features
+- **Data filtering for HDF5 files**: Added `--h5-data-filter` option to compare only data meeting specific criteria
+- **Enhanced HDF5 comparison**: Support for absolute value filtering and various comparison operators

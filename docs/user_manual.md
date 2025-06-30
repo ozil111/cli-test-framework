@@ -319,9 +319,15 @@ compare-files data1.h5 data2.h5 --h5-table table1,table2
 
 # Compare with numerical tolerance
 compare-files data1.h5 data2.h5 --h5-rtol 1e-5 --h5-atol 1e-8
+
+# Use regex patterns for table selection
+compare-files data1.h5 data2.h5 --h5-table-regex "table.*"
+
+# Use comma-separated table names with regex (New in 0.3.7)
+compare-files data1.h5 data2.h5 --h5-table-regex "table1,table2,table3"
 ```
 
-#### Data Filtering (New in 0.3.6)
+#### Data Filtering (New in 0.3.7)
 
 You can use the `--h5-data-filter` option to only compare data that meets a certain condition. For example:
 

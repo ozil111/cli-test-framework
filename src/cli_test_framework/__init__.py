@@ -5,7 +5,7 @@ This package provides tools for testing command-line applications and scripts
 with support for parallel execution and advanced file comparison capabilities.
 """
 
-__version__ = "0.3.3"
+__version__ = "0.3.7"
 __author__ = "Xiaotong Wang"
 __email__ = "xiaotongwang98@gmail.com"
 
