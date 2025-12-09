@@ -12,3 +12,5 @@ latex
 
 dist
 *.pyc
+
+dist_package
