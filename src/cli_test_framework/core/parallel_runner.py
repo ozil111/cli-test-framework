@@ -59,7 +59,9 @@ class ParallelRunner(BaseRunner):
                                 "name": case.name,
                                 "command": case.command,
                                 "args": case.args,
-                                "expected": case.expected
+                                "expected": case.expected,
+                                "timeout": case.timeout,
+                                "resources": case.resources
                             },
                             str(self.workspace) if self.workspace else None
                         ): (i, case) 

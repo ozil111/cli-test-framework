@@ -1,13 +1,15 @@
 from typing import Optional, Dict, Any
 from ..core.base_runner import BaseRunner
 from ..core.test_case import TestCase
-from ..utils.path_resolver import PathResolver
-import subprocess
+from ..core.execution import execute_single_test_case
+from ..core.types import TestCaseData
+from ..utils.path_resolver import PathResolver, parse_command_string, resolve_paths
 import sys
 
 class YAMLRunner(BaseRunner):
     def __init__(self, config_file="test_cases.yaml", workspace: Optional[str] = None):
         super().__init__(config_file, workspace)
+        # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
 
     def load_test_cases(self):
@@ -25,6 +27,7 @@ class YAMLRunner(BaseRunner):
                 if not all(field in case for field in required_fields):
                     raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
                 
+                # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
                 case["command"] = self.path_resolver.parse_command_string(case["command"])
                 case["args"] = self.path_resolver.resolve_paths(case["args"])
                 self.test_cases.append(TestCase(**case))
@@ -35,62 +38,27 @@ class YAMLRunner(BaseRunner):
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
         """Run a single test case and return the result"""
-        result = {
+        case_data: TestCaseData = {
             "name": case.name,
-            "status": "failed",
-            "message": "",
-            "output": "",
-            "command": "",
-            "return_code": None
+            "command": case.command,
+            "args": case.args,
+            "expected": case.expected,
+            "description": case.description or None,
+            "timeout": case.timeout,
+            "resources": case.resources,
         }
 
-        try:
-            command = f"{case.command} {' '.join(case.args)}"
-            result["command"] = command
-            print(f"  Executing command: {command}")
-            
-            process = subprocess.run(
-                command,
-                cwd=self.workspace if self.workspace else None,
-                capture_output=True,
-                text=True,
-                check=False,
-                shell=True
-            )
+        command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
+        print(f"  Executing command: {command_preview}")
 
-            output = process.stdout + process.stderr
-            result["output"] = output
-            result["return_code"] = process.returncode
-            
-            if output.strip():
-                print("  Command output:")
-                for line in output.splitlines():
-                    print(f"    {line}")
+        result = execute_single_test_case(case_data, str(self.workspace) if self.workspace else None)
 
-            # Check return code
-            if "return_code" in case.expected:
-                print(f"  Checking return code: {process.returncode} (expected: {case.expected['return_code']})")
-                self.assertions.return_code_equals(
-                    process.returncode,
-                    case.expected["return_code"]
-                )
+        if result["output"].strip():
+            print("  Command output:")
+            for line in result["output"].splitlines():
+                print(f"    {line}")
 
-            # Check output contains
-            if "output_contains" in case.expected:
-                print("  Checking output contains expected text...")
-                for expected_text in case.expected["output_contains"]:
-                    self.assertions.contains(output, expected_text)
-
-            # Check regex patterns
-            if "output_matches" in case.expected:
-                print("  Checking output matches regex pattern...")
-                self.assertions.matches(output, case.expected["output_matches"])
-
-            result["status"] = "passed"
-            
-        except AssertionError as e:
-            result["message"] = str(e)
-        except Exception as e:
-            result["message"] = f"Execution error: {str(e)}"
+        if result["status"] != "passed" and result.get("message"):
+            print(f"  Error: {result['message']}")
 
         return result

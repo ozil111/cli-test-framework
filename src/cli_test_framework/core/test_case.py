@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 @dataclass
 class TestCase:
@@ -8,6 +8,8 @@ class TestCase:
     args: List[str]
     expected: Dict[str, Any]
     description: str = ""
+    timeout: Optional[float] = None
+    resources: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert test case to dictionary format"""
@@ -17,5 +19,7 @@ class TestCase:
             "name": self.name,
             "command": self.command,
             "args": self.args,
-            "expected": self.expected
+            "expected": self.expected,
+            "timeout": self.timeout,
+            "resources": self.resources,
         }

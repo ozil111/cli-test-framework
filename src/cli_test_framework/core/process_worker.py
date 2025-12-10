@@ -3,11 +3,9 @@
 用于多进程并行测试执行，避免序列化问题
 """
 
-import subprocess
-import sys
 from typing import Dict, Any
-from .test_case import TestCase
-from .assertions import Assertions
+from .execution import execute_single_test_case
+from .types import TestCaseData
 
 def run_test_in_process(test_index: int, case_data: Dict[str, Any], workspace: str = None) -> Dict[str, Any]:
     """
@@ -21,73 +19,27 @@ def run_test_in_process(test_index: int, case_data: Dict[str, Any], workspace: s
     Returns:
         测试结果字典
     """
-    # 重新创建TestCase对象（避免序列化问题）
-    case = TestCase(
-        name=case_data["name"],
-        command=case_data["command"],
-        args=case_data["args"],
-        expected=case_data["expected"]
-    )
-    
-    # 创建断言对象
-    assertions = Assertions()
-    
-    result = {
-        "name": case.name,
-        "status": "failed",
-        "message": "",
-        "output": "",
-        "command": "",
-        "return_code": None
+    case: TestCaseData = {
+        "name": case_data["name"],
+        "command": case_data["command"],
+        "args": case_data["args"],
+        "expected": case_data["expected"],
+        "description": case_data.get("description"),
+        "timeout": case_data.get("timeout"),
+        "resources": case_data.get("resources"),
     }
 
-    try:
-        command = f"{case.command} {' '.join(case.args)}"
-        result["command"] = command
-        print(f"  [Process Worker {test_index}] Executing command: {command}")
-        
-        process = subprocess.run(
-            command,
-            cwd=workspace if workspace else None,
-            capture_output=True,
-            text=True,
-            check=False,
-            shell=True
-        )
+    command_preview = f"{case['command']} {' '.join(case['args'])}".strip()
+    print(f"  [Process Worker {test_index}] Executing command: {command_preview}")
 
-        output = process.stdout + process.stderr
-        result["output"] = output
-        result["return_code"] = process.returncode
-        
-        if output.strip():
-            print(f"  [Process Worker {test_index}] Command output for {case.name}:")
-            for line in output.splitlines():
-                print(f"    {line}")
+    result = execute_single_test_case(case, workspace)
 
-        # 检查返回码
-        if "return_code" in case.expected:
-            print(f"  [Process Worker {test_index}] Checking return code for {case.name}: {process.returncode} (expected: {case.expected['return_code']})")
-            assertions.return_code_equals(
-                process.returncode,
-                case.expected["return_code"]
-            )
+    if result["output"].strip():
+        print(f"  [Process Worker {test_index}] Command output for {case['name']}:")
+        for line in result["output"].splitlines():
+            print(f"    {line}")
 
-        # 检查输出包含
-        if "output_contains" in case.expected:
-            print(f"  [Process Worker {test_index}] Checking output contains for {case.name}...")
-            for expected_text in case.expected["output_contains"]:
-                assertions.contains(output, expected_text)
-
-        # 检查正则匹配
-        if "output_matches" in case.expected:
-            print(f"  [Process Worker {test_index}] Checking output matches regex for {case.name}...")
-            assertions.matches(output, case.expected["output_matches"])
-
-        result["status"] = "passed"
-        
-    except AssertionError as e:
-        result["message"] = str(e)
-    except Exception as e:
-        result["message"] = f"Execution error: {str(e)}"
+    if result["status"] != "passed" and result.get("message"):
+        print(f"  [Process Worker {test_index}] Error for {case['name']}: {result['message']}")
 
     return result 

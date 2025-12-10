@@ -18,6 +18,7 @@ This is a lightweight and extensible automated testing framework that supports d
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
 - **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
+- **🎛️ Resource-Aware Scheduling**: Per-test timeout and resource hints (estimated time / memory / priority) with LPT-based ordering in parallel runs to improve throughput and avoid long-tail blocking
 
 ## 3. Quick Start
 
@@ -110,6 +111,20 @@ compare-files binary1.bin binary2.bin --similarity
             }
         },
         {
+            "name": "Full_Car_Crash_Simulation",
+            "command": "radioss_solver",
+            "args": ["-i", "input.0000.rad"],
+            "timeout": 36000,
+            "resources": {
+                "estimated_time": 18000,
+                "min_memory_mb": 16000,
+                "priority": 10
+            },
+            "expected": {
+                "return_code": 0
+            }
+        },
+        {
             "name": "File Comparison Test", 
             "command": "compare-files",
             "args": ["file1.txt", "file2.txt", "--verbose"],
@@ -151,6 +166,47 @@ test_cases:
       return_code: 0
       output_matches: ".*\\.md$"
 ```
+
+### Resource-Aware Configuration
+
+For simulation and long-running tasks (CAE/FEA), you can specify resource requirements to enable intelligent scheduling:
+
+```json
+{
+    "name": "Full_Car_Crash_Simulation",
+    "command": "radioss_solver",
+    "args": ["-i", "input.0000.rad"],
+    "timeout": 36000,
+    "resources": {
+        "estimated_time": 18000,
+        "min_memory_mb": 16000,
+        "priority": 10
+    },
+    "expected": {
+        "return_code": 0
+    }
+}
+```
+
+**Field Descriptions:**
+
+- **`timeout`** (optional, float): **Hard limit in seconds**. If the test exceeds this time, it will be killed. Default: 3600 seconds (1 hour). Set to `null` for unlimited (not recommended).
+  - Common values: `60` (1 min), `300` (5 min), `3600` (1 hour), `18000` (5 hours), `86400` (24 hours)
+
+- **`resources.estimated_time`** (optional, float): **Estimated duration in seconds** for LPT (Longest Processing Time) scheduling. Tasks with longer estimated times are scheduled first in parallel runs to improve throughput.
+  - Example: `18000` = 5 hours, `3600` = 1 hour, `300` = 5 minutes
+
+- **`resources.min_memory_mb`** (optional, float): **Estimated memory requirement in MB**. Used for OOM (Out Of Memory) risk warnings. Currently informational only.
+  - Example: `16000` = 16 GB, `8192` = 8 GB, `4096` = 4 GB
+
+- **`resources.priority`** (optional, int): **Task priority** (higher number = higher priority). Currently informational only. Recommended range: 0-10.
+  - `10`: Critical/blocking tasks (must run first)
+  - `7-9`: High priority (important business paths)
+  - `4-6`: Normal priority
+  - `1-3`: Low priority / exploratory tests
+  - `0` or unset: Default priority
+
+**Note:** All time values (`timeout`, `estimated_time`) are in **seconds**, not milliseconds. This matches Python's `subprocess.run(timeout=...)` API.
 
 ## 5. File Comparison Features
 

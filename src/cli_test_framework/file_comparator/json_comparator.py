@@ -53,8 +53,8 @@ class JsonComparator(TextComparator):
         json_text = ''.join(text_content)
         try:
             json_data = json.loads(json_text)
-            if self.key_field:
-                # Only keep the specified key field(s)
+            if self.key_field and isinstance(json_data, dict):
+                # Only keep the specified key field(s) when top-level is a mapping
                 key_fields = self.key_field if isinstance(self.key_field, list) else [self.key_field]
                 filtered_data = {key: json_data[key] for key in key_fields if key in json_data}
                 return filtered_data
@@ -79,8 +79,9 @@ class JsonComparator(TextComparator):
             self._compare_json_key_based(content1, content2, "", differences)
         else:
             self._compare_json_exact(content1, content2, "", differences)
-            
-        return False, differences
+        
+        identical = len(differences) == 0
+        return identical, differences
 
     def _compare_json_exact(self, obj1, obj2, path, differences, max_diffs=10):
         """

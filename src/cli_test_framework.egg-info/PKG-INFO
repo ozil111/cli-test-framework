@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: cli-test-framework
-Version: 0.3.7
+Version: 0.4.1
 Summary: A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.
 Home-page: https://github.com/ozil111/cli-test-framework
 Author: Xiaotong Wang
@@ -53,6 +53,7 @@ This is a lightweight and extensible automated testing framework that supports d
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
 - **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
+- **🎛️ Resource-Aware Scheduling**: Per-test timeout and resource hints (estimated time / memory / priority) with LPT-based ordering in parallel runs to improve throughput and avoid long-tail blocking
 
 ## 3. Quick Start
 
@@ -142,6 +143,20 @@ compare-files binary1.bin binary2.bin --similarity
             "expected": {
                 "return_code": 0,
                 "output_contains": ["Environment: development"]
+            }
+        },
+        {
+            "name": "Full_Car_Crash_Simulation",
+            "command": "radioss_solver",
+            "args": ["-i", "input.0000.rad"],
+            "timeout": 36000,
+            "resources": {
+                "estimated_time": 18000,
+                "min_memory_mb": 16000,
+                "priority": 10
+            },
+            "expected": {
+                "return_code": 0
             }
         },
         {
