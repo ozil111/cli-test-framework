@@ -46,6 +46,36 @@ class ParallelJSONRunner(ParallelRunner):
         
         print(f"✅ [Resource Manager] Detected {self.total_physical} CPUs. Pool size set to {self.safe_capacity}.")
 
+    def _assign_relative_cpu_cores(self) -> None:
+        """
+        If cpu_cores is unset, allocate proportionally based on estimated_time/min_memory_mb
+        across all cases, relative to available safe_capacity.
+        """
+        candidates = [c for c in self.test_cases if not (c.resources and "cpu_cores" in c.resources)]
+        if not candidates:
+            return
+
+        def weight(case: TestCase) -> float:
+            res = case.resources or {}
+            est = float(res.get("estimated_time") or 0)
+            mem = float(res.get("min_memory_mb") or 0)
+            # Simple additive weight; keep >=1 to avoid zero allocation.
+            return max(1.0, est / 3600.0 + mem / 4000.0)
+
+        weights = [weight(c) for c in candidates]
+        total_weight = sum(weights)
+        if total_weight <= 0:
+            total_weight = float(len(weights))  # uniform
+
+        remaining = self.safe_capacity
+        for case, w in zip(candidates, weights):
+            share = max(1, int(round(self.safe_capacity * (w / total_weight))))
+            share = min(self.safe_capacity, max(1, min(share, remaining))) if remaining > 0 else 1
+            if not case.resources:
+                case.resources = {}
+            case.resources["cpu_cores"] = share
+            remaining = max(0, remaining - share)
+
     def load_test_cases(self) -> None:
         """从JSON文件加载测试用例"""
         try:
@@ -77,6 +107,9 @@ class ParallelJSONRunner(ParallelRunner):
                 top_case = self.test_cases[0]
                 top_est = (top_case.resources or {}).get("estimated_time", 0)
                 print(f"Heaviest task: {top_case.name} (Est: {top_est}s)")
+
+            # Relative CPU allocation for cases without explicit cpu_cores
+            self._assign_relative_cpu_cores()
         except Exception as e:
             sys.exit(f"Failed to load configuration file: {str(e)}")
 
