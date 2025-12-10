@@ -18,7 +18,7 @@ This is a lightweight and extensible automated testing framework that supports d
 - **📊 Comprehensive Reports**: Detailed pass rate statistics and failure diagnostics
 - **🔧 Thread-Safe Design**: Robust concurrent execution with proper synchronization
 - **📝 Advanced File Comparison**: Support for comparing various file types (text, binary, JSON, HDF5) with detailed diff output
-- **🎛️ Resource-Aware Scheduling**: Per-test timeout and resource hints (estimated time / memory / priority) with LPT-based ordering in parallel runs to improve throughput and avoid long-tail blocking
+- **🎛️ Resource-Aware Scheduling**: Per-test timeout and resource hints (CPU cores / estimated time / memory / priority) with automatic CPU core detection and semaphore-based scheduling to prevent resource conflicts and solver "runaway" scenarios
 
 ## 3. Quick Start
 
@@ -46,15 +46,21 @@ success = runner.run_tests()
 ```python
 from src.runners.parallel_json_runner import ParallelJSONRunner
 
-# Multi-threaded execution (recommended for I/O-intensive tests)
+# Multi-threaded execution with resource-aware scheduling
 runner = ParallelJSONRunner(
     config_file="path/to/test_cases.json",
     workspace="/project/root",
     max_workers=4,           # Maximum concurrent workers
-    execution_mode="thread"  # "thread" or "process"
+    execution_mode="thread"  # "thread" (supports CPU scheduling) or "process"
 )
 success = runner.run_tests()
 ```
+
+**Resource-Aware Scheduling**: When using `execution_mode="thread"`, the framework automatically:
+- Detects available CPU cores on your machine
+- Manages CPU resource allocation using semaphore-based scheduling
+- Prevents resource conflicts by queuing tasks that require more cores than available
+- Injects environment variables to constrain solver threads (prevents "runaway" scenarios)
 
 ### Setup Module Usage
 
@@ -116,6 +122,7 @@ compare-files binary1.bin binary2.bin --similarity
             "args": ["-i", "input.0000.rad"],
             "timeout": 36000,
             "resources": {
+                "cpu_cores": 4,
                 "estimated_time": 18000,
                 "min_memory_mb": 16000,
                 "priority": 10
@@ -169,7 +176,7 @@ test_cases:
 
 ### Resource-Aware Configuration
 
-For simulation and long-running tasks (CAE/FEA), you can specify resource requirements to enable intelligent scheduling:
+For simulation and long-running tasks (CAE/FEA), you can specify resource requirements to enable intelligent scheduling with automatic CPU core management:
 
 ```json
 {
@@ -178,6 +185,7 @@ For simulation and long-running tasks (CAE/FEA), you can specify resource requir
     "args": ["-i", "input.0000.rad"],
     "timeout": 36000,
     "resources": {
+        "cpu_cores": 4,
         "estimated_time": 18000,
         "min_memory_mb": 16000,
         "priority": 10
@@ -193,6 +201,17 @@ For simulation and long-running tasks (CAE/FEA), you can specify resource requir
 - **`timeout`** (optional, float): **Hard limit in seconds**. If the test exceeds this time, it will be killed. Default: 3600 seconds (1 hour). Set to `null` for unlimited (not recommended).
   - Common values: `60` (1 min), `300` (5 min), `3600` (1 hour), `18000` (5 hours), `86400` (24 hours)
 
+- **`resources.cpu_cores`** (optional, int): **Number of CPU cores required by this task**. The framework automatically detects available CPU cores and uses semaphore-based scheduling to manage resource allocation. Tasks that require more cores than available will wait until resources are freed. Default: `1` core.
+  - **How it works**: The framework automatically detects your machine's CPU count (e.g., 16 cores), reserves 2 cores for the system, and creates a resource pool with the remaining cores (e.g., 14 cores). Tasks acquire cores from this pool before execution.
+  - **Environment injection**: When a task starts, the framework automatically sets `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, and `NPROC` environment variables to constrain solver threads, preventing "runaway" scenarios where solvers ignore Python's scheduling.
+  - **Example scenarios**:
+    - Machine with 16 cores (14 available): 3 tasks requiring 4 cores each can run concurrently (3×4=12 cores used, 2 cores free)
+    - Machine with 8 cores (6 available): 1 task requiring 4 cores + 1 task requiring 2 cores can run concurrently
+  - **Recommendations**:
+    - Heavy simulations: `4-8` cores
+    - Medium tasks: `2-4` cores  
+    - Lightweight scripts: `1` core (default)
+
 - **`resources.estimated_time`** (optional, float): **Estimated duration in seconds** for LPT (Longest Processing Time) scheduling. Tasks with longer estimated times are scheduled first in parallel runs to improve throughput.
   - Example: `18000` = 5 hours, `3600` = 1 hour, `300` = 5 minutes
 
@@ -206,7 +225,9 @@ For simulation and long-running tasks (CAE/FEA), you can specify resource requir
   - `1-3`: Low priority / exploratory tests
   - `0` or unset: Default priority
 
-**Note:** All time values (`timeout`, `estimated_time`) are in **seconds**, not milliseconds. This matches Python's `subprocess.run(timeout=...)` API.
+**Note:** 
+- All time values (`timeout`, `estimated_time`) are in **seconds**, not milliseconds. This matches Python's `subprocess.run(timeout=...)` API.
+- **CPU core scheduling is only active in thread mode**. Process mode will fall back to original behavior (process-level isolation provides some resource separation).
 
 ## 5. File Comparison Features
 
@@ -375,12 +396,35 @@ except Exception as e:
    max_workers = os.cpu_count() * 2
    ```
 
-2. **Test Case Design**:
+2. **Resource-Aware Scheduling**:
+   - **For CAE/FEA simulations**: Always specify `cpu_cores` in your test configuration to prevent resource conflicts
+   - **Mixed workloads**: Configure lightweight tasks with `cpu_cores: 1` and heavy simulations with appropriate core counts
+   - **Example mixed configuration**:
+     ```json
+     {
+         "test_cases": [
+             {
+                 "name": "Heavy Simulation",
+                 "command": "radioss_solver",
+                 "resources": { "cpu_cores": 4 }
+             },
+             {
+                 "name": "Lightweight Script",
+                 "command": "python script.py",
+                 "resources": { "cpu_cores": 1 }
+             }
+         ]
+     }
+     ```
+   - **Monitor resource usage**: The framework prints resource acquisition/release logs to help you understand scheduling behavior
+
+3. **Test Case Design**:
    - ✅ Ensure test independence (no dependencies between tests)
    - ✅ Avoid shared resource conflicts (different files/ports)
    - ✅ Use relative paths (framework handles resolution automatically)
+   - ✅ Specify `cpu_cores` for CPU-intensive tasks to enable intelligent scheduling
 
-3. **Debugging**:
+4. **Debugging**:
    ```python
    # Enable verbose output for debugging
    runner = ParallelJSONRunner(
@@ -565,7 +609,22 @@ compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
 
 # 版本更新日志
 
-## 0.3.7 (Latest)
+## 0.4.2 (Latest)
+
+### ✨ New Features
+- **Resource-Aware CPU Scheduling**: Automatic CPU core detection and semaphore-based scheduling to prevent resource conflicts
+  - Added `cpu_cores` field in `resources` configuration to specify CPU requirements per task
+  - Automatic environment variable injection (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `NPROC`) to constrain solver threads
+  - Prevents solver "runaway" scenarios where solvers ignore Python's scheduling
+  - Intelligent resource pool management: automatically reserves 2 cores for system use
+- **Enhanced execution engine**: Support for custom environment variables in test execution
+
+### 🔧 Improvements
+- **Better resource management**: Tasks now wait for available CPU cores instead of overwhelming the system
+- **Automatic CPU detection**: No manual configuration needed - framework detects available cores automatically
+- **Thread-safe resource allocation**: Semaphore-based scheduling ensures thread-safe resource management
+
+## 0.3.7
 
 ### 🐛 Bug Fixes
 - **Fixed H5 table regex matching**: `--h5-table-regex=table1,table2` now correctly matches both `table1` and `table2` instead of treating the entire string as a single regex pattern

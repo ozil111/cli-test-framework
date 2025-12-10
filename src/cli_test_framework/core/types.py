@@ -15,6 +15,7 @@ class ResourceRequirements(TypedDict, total=False):
     estimated_time: float  # seconds, used for ordering (LPT)
     min_memory_mb: float  # soft hint to avoid OOM
     priority: int  # higher value => higher priority
+    cpu_cores: int  # number of CPU cores required by this task
 
 
 class TestCaseData(TypedDict):

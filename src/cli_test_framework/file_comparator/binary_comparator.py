@@ -182,7 +182,7 @@ class BinaryComparator(BaseComparator):
 
     def compare_files(self, file1, file2, start_line=0, end_line=None, start_column=0, end_column=None):
         """
-        @brief Compare two binary files with optional similarity calculation
+        @brief Compare two binary files with optional similarity calculation using chunk-based streaming
         @param file1 Path: Path to the first binary file
         @param file2 Path: Path to the second binary file
         @param start_line int: Starting byte offset
@@ -190,6 +190,8 @@ class BinaryComparator(BaseComparator):
         @param start_column int: Ignored for binary files
         @param end_column int: Ignored for binary files
         @return ComparisonResult: Result object containing comparison details
+        @details This method implements chunk-based streaming comparison to avoid loading
+                 entire files into memory, making it suitable for large files with O(1) memory usage.
         """
         from pathlib import Path
         from .result import ComparisonResult
@@ -207,26 +209,170 @@ class BinaryComparator(BaseComparator):
             file2_path = Path(file2)
             result.file1_size = file1_path.stat().st_size
             result.file2_size = file2_path.stat().st_size
-            self.logger.debug("Reading content from files")
-            content1 = self.read_content(file1, start_line, end_line, start_column, end_column)
-            content2 = self.read_content(file2, start_line, end_line, start_column, end_column)
-            self.logger.debug("Comparing content")
-            identical, differences = self.compare_content(content1, content2)
-            result.identical = identical
-            result.differences = differences
+            
+            # Quick size check: if file sizes differ and similarity is not requested, 
+            # we can return early without streaming
+            if result.file1_size != result.file2_size and not self.similarity:
+                # Adjust sizes based on offset if specified
+                adjusted_size1 = result.file1_size - start_line
+                adjusted_size2 = result.file2_size - start_line
+                if end_line is not None:
+                    adjusted_size1 = min(adjusted_size1, end_line - start_line)
+                    adjusted_size2 = min(adjusted_size2, end_line - start_line)
+                
+                if adjusted_size1 != adjusted_size2:
+                    result.identical = False
+                    result.differences.append(Difference(
+                        position="file size",
+                        expected=f"{result.file1_size} bytes",
+                        actual=f"{result.file2_size} bytes",
+                        diff_type="size"
+                    ))
+                    return result
+            
+            # If similarity calculation is needed, we still need to read full content
+            # but for regular comparison, use chunk-based streaming
             if self.similarity:
+                # For similarity calculation, we still need full content
+                # This is a limitation of the current LCS algorithm
+                self.logger.debug("Reading full content for similarity calculation")
+                content1 = self.read_content(file1, start_line, end_line, start_column, end_column)
+                content2 = self.read_content(file2, start_line, end_line, start_column, end_column)
+                identical, differences = self.compare_content(content1, content2)
                 if (len(content1) + len(content2)) > 0:
                     lcs_len = self.compute_lcs_length(content1, content2)
                     similarity = 2 * lcs_len / (len(content1) + len(content2))
                 else:
                     similarity = 1
                 result.similarity = similarity
+            else:
+                # Chunk-based streaming comparison for O(1) memory usage
+                self.logger.debug("Using chunk-based streaming comparison")
+                identical, differences = self._compare_files_streaming(
+                    file1_path, file2_path, start_line, end_line
+                )
+            
+            result.identical = identical
+            result.differences = differences
             return result
         except Exception as e:
             self.logger.error(f"Error during comparison: {str(e)}")
             result.error = str(e)
             result.identical = False
             return result
+    
+    def _compare_files_streaming(self, file1_path, file2_path, start_offset=0, end_offset=None):
+        """
+        @brief Compare two binary files using chunk-based streaming
+        @param file1_path Path: Path to the first binary file
+        @param file2_path Path: Path to the second binary file
+        @param start_offset int: Starting byte offset
+        @param end_offset int: Ending byte offset (None for end of file)
+        @return tuple: (bool, list) - (identical, differences)
+        @details This method compares files chunk by chunk without loading entire files
+                 into memory, achieving O(1) memory complexity.
+        """
+        differences = []
+        max_differences = 10  # Limit number of differences reported
+        
+        try:
+            with open(file1_path, 'rb') as f1, open(file2_path, 'rb') as f2:
+                # Seek to start offset if specified
+                if start_offset > 0:
+                    f1.seek(start_offset)
+                    f2.seek(start_offset)
+                
+                # Calculate bytes to read if end_offset is specified
+                bytes_to_read = None
+                if end_offset is not None:
+                    if end_offset <= start_offset:
+                        raise ValueError("End offset must be greater than start offset")
+                    bytes_to_read = end_offset - start_offset
+                
+                chunk_size = self.chunk_size
+                current_offset = start_offset
+                bytes_read_total = 0
+                
+                while True:
+                    # Determine how many bytes to read in this chunk
+                    if bytes_to_read is not None:
+                        remaining = bytes_to_read - bytes_read_total
+                        if remaining <= 0:
+                            break
+                        read_size = min(chunk_size, remaining)
+                    else:
+                        read_size = chunk_size
+                    
+                    # Read chunks from both files
+                    chunk1 = f1.read(read_size)
+                    chunk2 = f2.read(read_size)
+                    
+                    # If both files are exhausted, we're done
+                    if not chunk1 and not chunk2:
+                        break
+                    
+                    # If one file ends before the other, that's a difference
+                    if len(chunk1) != len(chunk2):
+                        differences.append(Difference(
+                            position=f"byte {current_offset}",
+                            expected=f"{len(chunk1)} bytes in chunk",
+                            actual=f"{len(chunk2)} bytes in chunk",
+                            diff_type="content"
+                        ))
+                        break
+                    
+                    # Compare chunks byte by byte
+                    if chunk1 != chunk2:
+                        # Find the exact byte position where the difference starts
+                        for i in range(len(chunk1)):
+                            if chunk1[i] != chunk2[i]:
+                                abs_pos = current_offset + i
+                                
+                                # Show a few bytes before and after the difference for context
+                                context_size = 8
+                                context_start = max(0, i - context_size)
+                                context_end = min(len(chunk1), i + context_size)
+                                
+                                # Get context bytes (may need to read previous chunk)
+                                context1 = chunk1[context_start:context_end]
+                                context2 = chunk2[context_start:context_end]
+                                
+                                expected_hex = ' '.join(f"{b:02x}" for b in context1)
+                                actual_hex = ' '.join(f"{b:02x}" for b in context2)
+                                
+                                differences.append(Difference(
+                                    position=f"byte {abs_pos}",
+                                    expected=expected_hex,
+                                    actual=actual_hex,
+                                    diff_type="content"
+                                ))
+                                
+                                # Stop after finding first difference in chunk
+                                # or if we've reached max differences
+                                if len(differences) >= max_differences:
+                                    differences.append(Difference(
+                                        position=None,
+                                        expected=None,
+                                        actual=None,
+                                        diff_type="more differences not shown"
+                                    ))
+                                    return False, differences
+                                break
+                    
+                    current_offset += len(chunk1)
+                    bytes_read_total += len(chunk1)
+                    
+                    # If we didn't read a full chunk, we've reached EOF
+                    if len(chunk1) < read_size:
+                        break
+                
+                identical = len(differences) == 0
+                return identical, differences
+                
+        except FileNotFoundError as e:
+            raise ValueError(f"File not found: {e}")
+        except IOError as e:
+            raise ValueError(f"Error reading file: {str(e)}")
 
     def get_file_hash(self, file_path, chunk_size=8192):
         """

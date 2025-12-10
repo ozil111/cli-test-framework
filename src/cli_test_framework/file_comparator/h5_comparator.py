@@ -42,6 +42,13 @@ class H5Comparator(BaseComparator):
         content = {}
         processed_paths = set()
         
+        # Store file path for later chunked reading if needed
+        content['_file_path'] = str(file_path)
+        content['_start_line'] = start_line
+        content['_end_line'] = end_line
+        content['_start_column'] = start_column
+        content['_end_column'] = end_column
+        
         # Log whether we're in structure-only mode
         self.logger.debug(f"Reading file {file_path} in structure-only mode: {self.structure_only}")
         self.logger.debug(f"Tables parameter: {self.tables}")
@@ -86,26 +93,38 @@ class H5Comparator(BaseComparator):
                         'attrs': dict(obj.attrs)
                     }
                     
-                    # Read data with range constraints
+                    # Read data with range constraints and chunk-based reading for large datasets
                     try:
-                        data = obj[:]
-                        if isinstance(data, np.ndarray):
-                            if end_line is None:
-                                end_line_actual = data.shape[0]
-                            else:
-                                end_line_actual = min(end_line, data.shape[0])
-                                
-                            if len(data.shape) == 1:
-                                data = data[start_line:end_line_actual]
-                            elif len(data.shape) > 1:
-                                if end_column is None:
-                                    end_column_actual = data.shape[1]
+                        # Threshold for chunk-based reading (1 million elements = ~8MB for float64)
+                        # For datasets smaller than this, read entire dataset for efficiency
+                        if obj.size < 1000000:
+                            # Small dataset: read entire dataset into memory
+                            data = obj[:]
+                            if isinstance(data, np.ndarray):
+                                if end_line is None:
+                                    end_line_actual = data.shape[0]
                                 else:
-                                    end_column_actual = min(end_column, data.shape[1])
-                                data = data[start_line:end_line_actual, start_column:end_column_actual]
+                                    end_line_actual = min(end_line, data.shape[0])
+                                    
+                                if len(data.shape) == 1:
+                                    data = data[start_line:end_line_actual]
+                                elif len(data.shape) > 1:
+                                    if end_column is None:
+                                        end_column_actual = data.shape[1]
+                                    else:
+                                        end_column_actual = min(end_column, data.shape[1])
+                                    data = data[start_line:end_line_actual, start_column:end_column_actual]
+                            
+                            dataset_info['data'] = data
+                            self.logger.debug(f"Collected full data for small dataset: {name} (size: {obj.size})")
+                        else:
+                            # Large dataset: mark for chunked reading during comparison
+                            # Don't load entire dataset into memory
+                            dataset_info['data'] = None  # Will be read chunk-by-chunk during comparison
+                            dataset_info['dataset_path'] = name  # Store dataset path for later chunked reading
+                            dataset_info['needs_chunked_reading'] = True
+                            self.logger.debug(f"Marked large dataset for chunked reading: {name} (size: {obj.size})")
                         
-                        dataset_info['data'] = data
-                        self.logger.debug(f"Collected data for dataset: {name}")
                     except Exception as e:
                         self.logger.error(f"Error reading data from {name}: {str(e)}")
                     
@@ -217,8 +236,11 @@ class H5Comparator(BaseComparator):
         identical = True
         differences = []
 
-        # Get all unique table names
-        all_tables = set(content1.keys()) | set(content2.keys())
+        # Filter out metadata keys (starting with _)
+        metadata_keys = {'_file_path', '_start_line', '_end_line', '_start_column', '_end_column'}
+        
+        # Get all unique table names (excluding metadata)
+        all_tables = (set(content1.keys()) | set(content2.keys())) - metadata_keys
         
         # Debug log
         self.logger.debug(f"Structure-only mode: {self.structure_only}")
@@ -324,7 +346,32 @@ class H5Comparator(BaseComparator):
                     data1 = table1['data']
                     data2 = table2['data']
                     
-                    if isinstance(data1, np.ndarray) and isinstance(data2, np.ndarray):
+                    # Check if this is a large dataset that needs chunked comparison
+                    if table1.get('needs_chunked_reading') or table2.get('needs_chunked_reading'):
+                        # Large dataset: need to read from files in chunks
+                        self.logger.debug(f"Comparing large dataset {table_name} using chunked reading")
+                        # Get file paths from content dictionaries
+                        file1_path = content1.get('_file_path')
+                        file2_path = content2.get('_file_path')
+                        
+                        if not file1_path or not file2_path:
+                            self.logger.error(f"File paths not available for chunked reading of {table_name}")
+                            differences.append(self._create_difference(
+                                position=table_name,
+                                expected="File path available",
+                                actual="File path missing",
+                                diff_type="error"
+                            ))
+                            identical = False
+                        else:
+                            dataset_diff = self._compare_dataset_chunked(
+                                table1, table2, table_name, file1_path, file2_path
+                            )
+                            if dataset_diff:
+                                differences.extend(dataset_diff)
+                                identical = False
+                    elif isinstance(data1, np.ndarray) and isinstance(data2, np.ndarray):
+                        # Small dataset: already in memory, compare directly
                         try:
                             # 应用过滤器
                             mask1 = self.filter_func(data1) if self.filter_func else np.ones_like(data1, dtype=bool)
@@ -504,6 +551,172 @@ class H5Comparator(BaseComparator):
         except Exception as e:
             self.logger.error(f"Failed to parse data filter '{self.data_filter}': {e}. Ignoring filter.")
             return None
+    
+    def _compare_dataset_chunked(self, table1, table2, table_name, file1_path, file2_path):
+        """
+        Compare large datasets using chunked reading to avoid loading entire dataset into memory
+        @param table1 dict: Dataset info from first file
+        @param table2 dict: Dataset info from second file
+        @param table_name str: Name/path of the dataset
+        @param file1_path str: Path to first HDF5 file
+        @param file2_path str: Path to second HDF5 file
+        @return list: List of Difference objects, empty if datasets are identical
+        """
+        differences = []
+        dataset_path = table1.get('dataset_path') or table2.get('dataset_path') or table_name
+        
+        try:
+            with h5py.File(file1_path, 'r') as f1, h5py.File(file2_path, 'r') as f2:
+                ds1 = f1[dataset_path]
+                ds2 = f2[dataset_path]
+                
+                # Verify shapes match (should already be checked, but verify again)
+                if ds1.shape != ds2.shape:
+                    differences.append(self._create_difference(
+                        position=f"{table_name}/shape",
+                        expected=str(ds1.shape),
+                        actual=str(ds2.shape),
+                        diff_type="structure"
+                    ))
+                    return differences
+                
+                # Determine chunk size (1000 rows at a time, adjustable based on memory constraints)
+                chunk_size = 1000
+                total_rows = ds1.shape[0]
+                
+                # Handle different dimensionalities
+                if len(ds1.shape) == 1:
+                    # 1D array: simple chunking
+                    for start_idx in range(0, total_rows, chunk_size):
+                        end_idx = min(start_idx + chunk_size, total_rows)
+                        
+                        # Read only this slice
+                        slice1 = ds1[start_idx:end_idx]
+                        slice2 = ds2[start_idx:end_idx]
+                        
+                        # Apply filter if specified
+                        if self.filter_func:
+                            mask1 = self.filter_func(slice1)
+                            mask2 = self.filter_func(slice2)
+                            combined_mask = mask1 & mask2
+                            slice1 = slice1[combined_mask]
+                            slice2 = slice2[combined_mask]
+                        
+                        # Compare slices
+                        if np.issubdtype(ds1.dtype, np.number) and np.issubdtype(ds2.dtype, np.number):
+                            if not np.all(np.isclose(slice1, slice2, equal_nan=True, rtol=self.rtol, atol=self.atol)):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx}]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                # Early return on first difference to save time
+                                return differences
+                        else:
+                            if not np.array_equal(slice1, slice2):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx}]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                return differences
+                
+                elif len(ds1.shape) == 2:
+                    # 2D array: chunk along first dimension
+                    for start_idx in range(0, total_rows, chunk_size):
+                        end_idx = min(start_idx + chunk_size, total_rows)
+                        
+                        # Read slice along first dimension
+                        slice1 = ds1[start_idx:end_idx, :]
+                        slice2 = ds2[start_idx:end_idx, :]
+                        
+                        # Apply filter if specified
+                        if self.filter_func:
+                            mask1 = self.filter_func(slice1)
+                            mask2 = self.filter_func(slice2)
+                            combined_mask = mask1 & mask2
+                            # Flatten for filtering, then reshape
+                            flat1 = slice1.flatten()
+                            flat2 = slice2.flatten()
+                            slice1 = flat1[combined_mask.flatten()]
+                            slice2 = flat2[combined_mask.flatten()]
+                        
+                        # Compare slices
+                        if np.issubdtype(ds1.dtype, np.number) and np.issubdtype(ds2.dtype, np.number):
+                            if not np.all(np.isclose(slice1, slice2, equal_nan=True, rtol=self.rtol, atol=self.atol)):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx},:]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                return differences
+                        else:
+                            if not np.array_equal(slice1, slice2):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx},:]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                return differences
+                
+                else:
+                    # Higher dimensional arrays: chunk along first dimension
+                    # This is a simplified approach; for very high-dimensional arrays,
+                    # you might want more sophisticated chunking
+                    for start_idx in range(0, total_rows, chunk_size):
+                        end_idx = min(start_idx + chunk_size, total_rows)
+                        
+                        # Create slice tuple
+                        slice_tuple1 = (slice(start_idx, end_idx),) + (slice(None),) * (len(ds1.shape) - 1)
+                        slice_tuple2 = (slice(start_idx, end_idx),) + (slice(None),) * (len(ds2.shape) - 1)
+                        
+                        slice1 = ds1[slice_tuple1]
+                        slice2 = ds2[slice_tuple2]
+                        
+                        # Apply filter if specified (flatten for filtering)
+                        if self.filter_func:
+                            flat1 = slice1.flatten()
+                            flat2 = slice2.flatten()
+                            mask1 = self.filter_func(flat1)
+                            mask2 = self.filter_func(flat2)
+                            combined_mask = mask1 & mask2
+                            slice1 = flat1[combined_mask]
+                            slice2 = flat2[combined_mask]
+                        
+                        # Compare slices
+                        if np.issubdtype(ds1.dtype, np.number) and np.issubdtype(ds2.dtype, np.number):
+                            if not np.all(np.isclose(slice1, slice2, equal_nan=True, rtol=self.rtol, atol=self.atol)):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx},...]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                return differences
+                        else:
+                            if not np.array_equal(slice1, slice2):
+                                differences.append(self._create_difference(
+                                    position=f"{table_name}[{start_idx}:{end_idx},...]",
+                                    expected="Content matches",
+                                    actual="Content differs",
+                                    diff_type="content"
+                                ))
+                                return differences
+                
+        except Exception as e:
+            self.logger.error(f"Error in chunked comparison of {table_name}: {str(e)}")
+            differences.append(self._create_difference(
+                position=table_name,
+                expected="Successful comparison",
+                actual=f"Error: {str(e)}",
+                diff_type="error"
+            ))
+        
+        return differences
 
 # Register the new comparator
 from .factory import ComparatorFactory

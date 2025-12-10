@@ -1,6 +1,7 @@
 import subprocess
 import time
-from typing import Optional
+import os
+from typing import Optional, Dict
 
 from .assertions import Assertions
 from .types import ExpectedResult, TestCaseData, TestResultData
@@ -23,9 +24,14 @@ def validate_result(expected: ExpectedResult, actual: TestResultData) -> None:
         assertions.matches(actual["output"], expected["output_matches"])
 
 
-def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None) -> TestResultData:
+def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> TestResultData:
     """
     Stateless execution of a single test case.
+    
+    Args:
+        case: Test case data
+        workspace: Working directory for test execution
+        env: Optional environment variables to inject/override (merged with os.environ)
     """
     start_time = time.time()
     full_command = f"{case['command']} {' '.join(case['args'])}".strip()
@@ -41,6 +47,12 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         "duration": 0.0,
     }
 
+    # Prepare environment variables
+    # Default to current environment, merge with provided env if any
+    current_env = os.environ.copy()
+    if env:
+        current_env.update(env)
+
     try:
         process = subprocess.run(
             full_command,
@@ -50,6 +62,7 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
             check=False,
             shell=True,
             timeout=timeout_limit if timeout_limit is not None else None,
+            env=current_env,
         )
 
         output = process.stdout + process.stderr

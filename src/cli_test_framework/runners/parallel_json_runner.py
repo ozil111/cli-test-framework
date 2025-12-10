@@ -7,6 +7,7 @@ from ..utils.path_resolver import PathResolver, parse_command_string, resolve_pa
 import json
 import sys
 import threading
+import os
 
 class ParallelJSONRunner(ParallelRunner):
     """并行JSON测试运行器"""
@@ -22,10 +23,28 @@ class ParallelJSONRunner(ParallelRunner):
             max_workers: 最大并发数
             execution_mode: 执行模式，'thread' 或 'process'
         """
+        # 1. 自动感知：获取物理核心数
+        # 如果获取失败默认为 4，留 2 个核给系统/Python (防止 GUI 卡死)
+        self.total_physical = os.cpu_count() or 4
+        self.safe_capacity = max(1, self.total_physical - 2)
+        
+        # 2. 设置 Worker 数量
+        # 注意：这里 max_workers 可以设得很大（比如等于总核数），
+        # 因为我们不再靠 worker 数量限制并发，而是靠下面的 semaphore 限制。
+        if max_workers is None:
+            max_workers = self.total_physical
+            
         super().__init__(config_file, workspace, max_workers, execution_mode)
         # Backward-compatible attribute for potential external patches/tests
         self.path_resolver = PathResolver(self.workspace)
         self._print_lock = threading.Lock()  # 用于控制输出顺序
+        
+        # 3. 初始化资源池 (Semaphore)
+        # 这里的 value 代表"当前剩余可用的核心数"
+        # Note: Semaphore only works for thread mode. Process mode will use original behavior.
+        self.cpu_semaphore = threading.Semaphore(self.safe_capacity) if execution_mode == "thread" else None
+        
+        print(f"✅ [Resource Manager] Detected {self.total_physical} CPUs. Pool size set to {self.safe_capacity}.")
 
     def load_test_cases(self) -> None:
         """从JSON文件加载测试用例"""
@@ -62,7 +81,53 @@ class ParallelJSONRunner(ParallelRunner):
             sys.exit(f"Failed to load configuration file: {str(e)}")
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
-        """运行单个测试用例（线程安全版本）"""
+        """
+        运行单个测试用例（线程安全版本，支持资源感知调度）
+        
+        对于 thread 模式：使用信号量控制 CPU 核心分配
+        对于 process 模式：回退到原始行为（进程间信号量需要额外实现）
+        """
+        # 1. 获取任务所需核数
+        # 优先读取 json 配置，如果没有配置，默认假设它是轻型任务 (1核)
+        # 如果你的 json 里有很多重型任务，可以在配置中明确指定
+        required_cores = 1
+        if case.resources and "cpu_cores" in case.resources:
+            required_cores = case.resources["cpu_cores"]
+        
+        # 安全钳位：如果任务需要的核数超过了机器总核数，强制降级，避免死锁
+        if required_cores > self.safe_capacity:
+            required_cores = self.safe_capacity
+        
+        tokens_acquired = 0
+        task_env = None
+        
+        # 只在 thread 模式下使用信号量进行资源管理
+        if self.execution_mode == "thread" and self.cpu_semaphore is not None:
+            try:
+                # 2. 申请资源 (阻塞等待)
+                # 必须循环申请，因为 Semaphore 一次只给 1 个
+                for _ in range(required_cores):
+                    self.cpu_semaphore.acquire()
+                    tokens_acquired += 1
+                
+                # 3. 构造环境约束
+                # 这步非常重要：显式告诉求解器"你只能用这么多核"
+                # 这能防止求解器无视 Python 的调度，私自占满 CPU
+                task_env = {
+                    "OMP_NUM_THREADS": str(required_cores),
+                    "MKL_NUM_THREADS": str(required_cores),  # 针对 Intel 数学库
+                    "NPROC": str(required_cores)             # 某些求解器专用
+                }
+                
+                # 打印调试信息
+                with self._print_lock:
+                    print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
+            except Exception as e:
+                # 如果获取资源失败，记录错误但不阻塞
+                with self._print_lock:
+                    print(f"  [Scheduler] Warning: Failed to acquire resources for '{case.name}': {e}")
+        
+        # 准备测试用例数据
         case_data: TestCaseData = {
             "name": case.name,
             "command": case.command,
@@ -75,9 +140,15 @@ class ParallelJSONRunner(ParallelRunner):
 
         command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
         with self._print_lock:
-            print(f"  [Worker] Executing command: {command_preview}")
+            if self.execution_mode != "thread" or self.cpu_semaphore is None:
+                print(f"  [Worker] Executing command: {command_preview}")
 
-        result = execute_single_test_case(case_data, str(self.workspace) if self.workspace else None)
+        # 4. 执行测试 (传入 env)
+        result = execute_single_test_case(
+            case_data, 
+            str(self.workspace) if self.workspace else None,
+            env=task_env  # 注入环境变量
+        )
 
         if result["output"].strip():
             with self._print_lock:
@@ -88,5 +159,18 @@ class ParallelJSONRunner(ParallelRunner):
         if result["status"] != "passed" and result.get("message"):
             with self._print_lock:
                 print(f"  [Worker] Error for {case.name}: {result['message']}")
+        
+        # 5. 归还资源
+        if self.execution_mode == "thread" and self.cpu_semaphore is not None and tokens_acquired > 0:
+            try:
+                for _ in range(tokens_acquired):
+                    self.cpu_semaphore.release()
+                
+                with self._print_lock:
+                    # 只有看到这条日志，说明资源释放了，下一个排队的任务才能开始
+                    print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
+            except Exception as e:
+                with self._print_lock:
+                    print(f"  [Scheduler] Warning: Failed to release resources for '{case.name}': {e}")
 
         return result 
