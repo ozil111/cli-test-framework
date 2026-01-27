@@ -11,19 +11,34 @@ def _as_workspace_path(workspace: WorkspaceLike) -> Path:
     return workspace if isinstance(workspace, Path) else Path(workspace)
 
 
+def _resolve_relative_part(part: str, workspace_path: Path) -> str:
+    """
+    带标识符的路径解析逻辑：
+    1. 检查标识符 'raw:' -> 如果存在，强行按原样返回（剥离标识符）
+    2. 跳过旗标 (- 开头)
+    3. 跳过纯数字
+    4. 启发式解析其他潜在路径
+    """
+    if part.startswith("raw:"):
+        return part[4:]
+
+    if part.startswith("-"):
+        return part
+
+    if part.isdigit():
+        return part
+
+    if "." in part or "/" in part or "\\" in part:
+        if not Path(part).is_absolute():
+            return str(workspace_path / part)
+
+    return part
+
+
 def resolve_paths(args: List[str], workspace: WorkspaceLike) -> List[str]:
-    """Resolve relative paths in args against the workspace."""
+    """根据标识符或启发式规则解析参数列表中的路径"""
     workspace_path = _as_workspace_path(workspace)
-    resolved_args = []
-    for arg in args:
-        if not arg.startswith("--"):
-            if not Path(arg).is_absolute():
-                resolved_args.append(str(workspace_path / arg))
-            else:
-                resolved_args.append(arg)
-        else:
-            resolved_args.append(arg)
-    return resolved_args
+    return [_resolve_relative_part(arg, workspace_path) for arg in args]
 
 
 def resolve_command(command: str, workspace: WorkspaceLike) -> str:
@@ -71,40 +86,24 @@ def parse_command_string(command_string: str, workspace: WorkspaceLike) -> str:
             command_part = parts[0]
             remaining_parts = parts[1:]
 
-            if Path(command_part).is_absolute():
-                resolved_command = command_part
-            else:
-                resolved_command = resolve_command(command_part, workspace_path)
+            resolved_command = (
+                command_part
+                if Path(command_part).is_absolute()
+                else resolve_command(command_part, workspace_path)
+            )
 
-            # Preserve scripts passed via "-c" as a single argument to avoid losing quotes
             resolved_parts = []
             if "-c" in remaining_parts:
                 c_index = remaining_parts.index("-c")
                 before_c = remaining_parts[:c_index]
                 script_body = " ".join(remaining_parts[c_index + 1 :])
                 for part in before_c:
-                    if part.startswith("-"):
-                        resolved_parts.append(part)
-                    elif ('.' in part or '/' in part or '\\' in part) and not part.isdigit():
-                        if not Path(part).is_absolute():
-                            resolved_parts.append(str(workspace_path / part))
-                        else:
-                            resolved_parts.append(part)
-                    else:
-                        resolved_parts.append(part)
+                    resolved_parts.append(_resolve_relative_part(part, workspace_path))
                 resolved_parts.append("-c")
                 resolved_parts.append(script_body)
             else:
                 for part in remaining_parts:
-                    if part.startswith('-'):
-                        resolved_parts.append(part)
-                    elif ('.' in part or '/' in part or '\\' in part) and not part.isdigit():
-                        if not Path(part).is_absolute():
-                            resolved_parts.append(str(workspace_path / part))
-                        else:
-                            resolved_parts.append(part)
-                    else:
-                        resolved_parts.append(part)
+                    resolved_parts.append(_resolve_relative_part(part, workspace_path))
 
             return f"{resolved_command} {' '.join(resolved_parts)}"
 
@@ -123,26 +122,19 @@ def parse_command_string(command_string: str, workspace: WorkspaceLike) -> str:
         else:
             command_part = parts[0]
             remaining_parts = parts[1:]
-
             resolved_command = resolve_command(command_part, workspace_path)
 
             if "-c" in remaining_parts:
                 c_index = remaining_parts.index("-c")
                 before_c = remaining_parts[:c_index]
                 script_body = " ".join(remaining_parts[c_index + 1 :])
-                resolved_parts = before_c + ["-c", script_body]
+                resolved_parts = [
+                    _resolve_relative_part(p, workspace_path) for p in before_c
+                ] + ["-c", script_body]
             else:
-                resolved_parts = []
-                for part in remaining_parts:
-                    if part.startswith('-'):
-                        resolved_parts.append(part)
-                    elif ('.' in part or '/' in part or '\\' in part) and not part.isdigit():
-                        if not Path(part).is_absolute():
-                            resolved_parts.append(str(workspace_path / part))
-                        else:
-                            resolved_parts.append(part)
-                    else:
-                        resolved_parts.append(part)
+                resolved_parts = [
+                    _resolve_relative_part(p, workspace_path) for p in remaining_parts
+                ]
 
             return f"{resolved_command} {' '.join(resolved_parts)}"
 
@@ -172,19 +164,10 @@ def _parse_absolute_path_command(command_string: str, workspace: WorkspaceLike) 
 
                     if remaining:
                         remaining_parts = remaining.split()
-                        resolved_parts = []
-
-                        for part in remaining_parts:
-                            if part.startswith('-'):
-                                resolved_parts.append(part)
-                            elif ('.' in part or '/' in part or '\\' in part) and not part.isdigit():
-                                if not Path(part).is_absolute():
-                                    resolved_parts.append(str(workspace_path / part))
-                                else:
-                                    resolved_parts.append(part)
-                            else:
-                                resolved_parts.append(part)
-
+                        resolved_parts = [
+                            _resolve_relative_part(p, workspace_path)
+                            for p in remaining_parts
+                        ]
                         return f"{command_part} {' '.join(resolved_parts)}"
                     else:
                         return command_part
@@ -196,18 +179,9 @@ def _parse_absolute_path_command(command_string: str, workspace: WorkspaceLike) 
     command_part = parts[0]
     remaining_parts = parts[1:]
 
-    resolved_parts = []
-    for part in remaining_parts:
-        if part.startswith('-'):
-            resolved_parts.append(part)
-        elif ('.' in part or '/' in part or '\\' in part) and not part.isdigit():
-            if not Path(part).is_absolute():
-                resolved_parts.append(str(workspace_path / part))
-            else:
-                resolved_parts.append(part)
-        else:
-            resolved_parts.append(part)
-
+    resolved_parts = [
+        _resolve_relative_part(p, workspace_path) for p in remaining_parts
+    ]
     return f"{command_part} {' '.join(resolved_parts)}"
 
 
