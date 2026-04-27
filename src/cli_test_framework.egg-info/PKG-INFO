@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: cli-test-framework
-Version: 0.4.4
+Version: 0.4.5
 Summary: A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.
 Home-page: https://github.com/ozil111/cli-test-framework
 Author: Xiaotong Wang
@@ -19,7 +19,7 @@ Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: dukpy==0.5.0
 Requires-Dist: h5py>=3.8.0
-Requires-Dist: numpy>=1.22.0
+Requires-Dist: numpy>=1.21.0
 Requires-Dist: setuptools>=75.8.0
 Requires-Dist: wheel>=0.45.1
 Dynamic: author

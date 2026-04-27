@@ -8,7 +8,7 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="cli-test-framework",
-    version="0.4.4",
+    version="0.4.5",
     author="Xiaotong Wang",
     author_email="xiaotongwang98@gmail.com",
     description="A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.",
@@ -20,7 +20,7 @@ setup(
     install_requires=[
         "dukpy==0.5.0",
         "h5py>=3.8.0",
-        "numpy>=1.22.0",
+        "numpy>=1.21.0",
         "setuptools>=75.8.0",
         "wheel>=0.45.1"
     ],
