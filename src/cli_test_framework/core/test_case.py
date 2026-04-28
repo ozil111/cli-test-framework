@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 @dataclass
 class TestCaseStep:
     """A single step within a sequence test case."""
+    __test__ = False
     command: str
     args: List[str]
     expected: Dict[str, Any]
@@ -11,6 +12,7 @@ class TestCaseStep:
 
 @dataclass
 class TestCase:
+    __test__ = False
     name: str
     command: str = ""
     args: List[str] = field(default_factory=list)
