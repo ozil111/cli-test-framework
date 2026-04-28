@@ -1,6 +1,6 @@
 from typing import Optional, Dict, Any
 from ..core.parallel_runner import ParallelRunner
-from ..core.test_case import TestCase
+from ..core.test_case import TestCase, TestCaseStep
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
 from ..utils.path_resolver import PathResolver, parse_command_string, resolve_paths
@@ -85,15 +85,40 @@ class ParallelJSONRunner(ParallelRunner):
             # 加载setup配置
             self.load_setup_from_config(config)
 
-            required_fields = ["name", "command", "args", "expected"]
             for case in config["test_cases"]:
-                if not all(field in case for field in required_fields):
-                    raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
+                if "steps" in case:
+                    # Sequence mode: case has ordered steps
+                    steps = []
+                    for step in case["steps"]:
+                        step_required = ["command", "args", "expected"]
+                        if not all(field in step for field in step_required):
+                            raise ValueError(
+                                f"Step in test case '{case.get('name', 'unnamed')}' is missing required fields"
+                            )
+                        step["command"] = self.path_resolver.parse_command_string(step["command"])
+                        step["args"] = self.path_resolver.resolve_paths(step["args"])
+                        steps.append(TestCaseStep(**{
+                            "command": step["command"],
+                            "args": step["args"],
+                            "expected": step["expected"],
+                            "timeout": step.get("timeout"),
+                        }))
+                    self.test_cases.append(TestCase(
+                        name=case["name"],
+                        steps=steps,
+                        description=case.get("description", ""),
+                        resources=case.get("resources"),
+                    ))
+                else:
+                    # Single command mode (backward compatible)
+                    required_fields = ["name", "command", "args", "expected"]
+                    if not all(field in case for field in required_fields):
+                        raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
 
-                # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
-                case["command"] = self.path_resolver.parse_command_string(case["command"])
-                case["args"] = self.path_resolver.resolve_paths(case["args"])
-                self.test_cases.append(TestCase(**case))
+                    # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
+                    case["command"] = self.path_resolver.parse_command_string(case["command"])
+                    case["args"] = self.path_resolver.resolve_paths(case["args"])
+                    self.test_cases.append(TestCase(**case))
 
             print(f"Successfully loaded {len(self.test_cases)} test cases")
 
@@ -112,6 +137,71 @@ class ParallelJSONRunner(ParallelRunner):
             self._assign_relative_cpu_cores()
         except Exception as e:
             sys.exit(f"Failed to load configuration file: {str(e)}")
+
+    def _run_sequence(self, case: TestCase) -> Dict[str, Any]:
+        """Run a sequence test case with multiple steps (fail-fast, thread-safe printing)."""
+        combined_output = ""
+        total_duration = 0.0
+        all_passed = True
+        last_result = None
+        failed_step = None
+
+        for i, step in enumerate(case.steps):
+            step_name = f"{case.name} [step {i+1}/{len(case.steps)}]"
+            case_data = {
+                "name": step_name,
+                "command": step.command,
+                "args": step.args,
+                "expected": step.expected,
+                "description": None,
+                "timeout": step.timeout,
+                "resources": None,
+            }
+
+            command_preview = f"{step.command} {' '.join(step.args)}".strip()
+            with self._print_lock:
+                print(f"  [Worker] Executing step {i+1}/{len(case.steps)}: {command_preview}")
+
+            result = execute_single_test_case(
+                case_data, str(self.workspace) if self.workspace else None
+            )
+
+            if result["output"].strip():
+                with self._print_lock:
+                    print(f"  [Worker] Command output for {step_name}:")
+                    for line in result["output"].splitlines():
+                        print(f"    {line}")
+
+            combined_output += result["output"]
+            total_duration += result["duration"]
+            last_result = result
+
+            if result["status"] != "passed":
+                all_passed = False
+                failed_step = i + 1
+                if result.get("message"):
+                    with self._print_lock:
+                        print(f"  [Worker] Error at step {i+1}: {result['message']}")
+                break
+
+        status = "passed" if all_passed else last_result["status"]
+        message = ""
+        if not all_passed:
+            message = f"Failed at step {failed_step}/{len(case.steps)}: {last_result['message']}"
+
+        command_summary = " -> ".join(
+            f"{s.command} {' '.join(s.args)}".strip() for s in case.steps
+        )
+
+        return {
+            "name": case.name,
+            "status": status,
+            "message": message,
+            "command": command_summary,
+            "output": combined_output,
+            "return_code": last_result["return_code"] if last_result else None,
+            "duration": total_duration,
+        }
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
         """
@@ -160,38 +250,42 @@ class ParallelJSONRunner(ParallelRunner):
                 with self._print_lock:
                     print(f"  [Scheduler] Warning: Failed to acquire resources for '{case.name}': {e}")
         
-        # 准备测试用例数据
-        case_data: TestCaseData = {
-            "name": case.name,
-            "command": case.command,
-            "args": case.args,
-            "expected": case.expected,
-            "description": case.description or None,
-            "timeout": case.timeout,
-            "resources": case.resources,
-        }
+        # 4. 执行测试（支持 sequence 和单命令两种模式）
+        if case.steps:
+            result = self._run_sequence(case)
+        else:
+            # 准备测试用例数据
+            case_data: TestCaseData = {
+                "name": case.name,
+                "command": case.command,
+                "args": case.args,
+                "expected": case.expected,
+                "description": case.description or None,
+                "timeout": case.timeout,
+                "resources": case.resources,
+            }
 
-        command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
-        with self._print_lock:
-            if self.execution_mode != "thread" or self.cpu_semaphore is None:
-                print(f"  [Worker] Executing command: {command_preview}")
-
-        # 4. 执行测试 (传入 env)
-        result = execute_single_test_case(
-            case_data, 
-            str(self.workspace) if self.workspace else None,
-            env=task_env  # 注入环境变量
-        )
-
-        if result["output"].strip():
+            command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
             with self._print_lock:
-                print(f"  [Worker] Command output for {case.name}:")
-                for line in result["output"].splitlines():
-                    print(f"    {line}")
+                if self.execution_mode != "thread" or self.cpu_semaphore is None:
+                    print(f"  [Worker] Executing command: {command_preview}")
 
-        if result["status"] != "passed" and result.get("message"):
-            with self._print_lock:
-                print(f"  [Worker] Error for {case.name}: {result['message']}")
+            # 执行测试 (传入 env)
+            result = execute_single_test_case(
+                case_data, 
+                str(self.workspace) if self.workspace else None,
+                env=task_env  # 注入环境变量
+            )
+
+            if result["output"].strip():
+                with self._print_lock:
+                    print(f"  [Worker] Command output for {case.name}:")
+                    for line in result["output"].splitlines():
+                        print(f"    {line}")
+
+            if result["status"] != "passed" and result.get("message"):
+                with self._print_lock:
+                    print(f"  [Worker] Error for {case.name}: {result['message']}")
         
         # 5. 归还资源
         if self.execution_mode == "thread" and self.cpu_semaphore is not None and tokens_acquired > 0:

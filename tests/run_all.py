@@ -48,7 +48,9 @@ def main():
         print("No targets configured for selected scope.")
         return 1
 
-    pytest_args = ["pytest", *targets]
+    # Invoke pytest via the current interpreter so the active environment
+    # is used instead of whichever pytest.exe appears first on PATH.
+    pytest_args = [sys.executable, "-m", "pytest", *targets]
     if args.extra:
         pytest_args.extend(args.extra.split())
 
