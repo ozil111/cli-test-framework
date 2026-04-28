@@ -7,11 +7,14 @@
 4. [Test Case Definition](#test-case-definition)
 5. [Setup Module](#setup-module)
 6. [Parallel Testing](#parallel-testing)
-7. [File Comparison](#file-comparison)
-8. [Advanced Features](#advanced-features)
-9. [Troubleshooting](#troubleshooting)
-10. [API Reference](#api-reference)
-11. [Examples](#examples)
+7. [Sequence Testing](#sequence-testing)
+8. [File Comparison](#file-comparison)
+9. [Advanced Features](#advanced-features)
+10. [Troubleshooting](#troubleshooting)
+11. [API Reference](#api-reference)
+12. [Examples](#examples)
+
+
 
 ## Introduction
 
@@ -19,6 +22,7 @@ The CLI Testing Framework is a powerful tool designed for testing command-line a
 
 ### Key Features
 - Parallel test execution with thread and process support
+- Sequence test execution with multi-step fail-fast
 - JSON/YAML test case definition
 - Advanced file comparison capabilities
 - Comprehensive reporting
@@ -291,6 +295,54 @@ runner = ParallelJSONRunner(
 )
 success = runner.run_tests()
 ```
+
+## Sequence Testing
+
+Sequence testing allows a single test case to contain multiple ordered steps that execute sequentially. If any step fails, subsequent steps are skipped (fail-fast).
+
+### JSON Format
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "Multi-step Test",
+            "steps": [
+                {
+                    "command": "echo",
+                    "args": ["step1"],
+                    "expected": { "return_code": 0, "output_contains": ["step1"] }
+                },
+                {
+                    "command": "echo",
+                    "args": ["step2"],
+                    "expected": { "return_code": 0, "output_contains": ["step2"] }
+                }
+            ]
+        }
+    ]
+}
+```
+
+### YAML Format
+
+```yaml
+test_cases:
+  - name: Multi-step Test
+    steps:
+      - command: echo
+        args: ["step1"]
+        expected:
+          return_code: 0
+          output_contains: ["step1"]
+      - command: echo
+        args: ["step2"]
+        expected:
+          return_code: 0
+          output_contains: ["step2"]
+```
+
+Each step supports `command`, `args`, `expected`, and `timeout` fields. When a step fails, the overall result reports which step failed (e.g., "Failed at step 2/3: ...").
 
 ## File Comparison
 
