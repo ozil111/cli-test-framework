@@ -12,7 +12,8 @@ class ParallelRunner(BaseRunner):
     
     def __init__(self, config_file: str, workspace: Optional[str] = None, 
                  max_workers: Optional[int] = None, 
-                 execution_mode: str = "thread"):
+                 execution_mode: str = "thread",
+                 test_case_filter: Optional[List[str]] = None):
         """
         初始化并行运行器
         
@@ -21,8 +22,9 @@ class ParallelRunner(BaseRunner):
             workspace: 工作目录
             max_workers: 最大并发数，默认为CPU核心数
             execution_mode: 执行模式，'thread'(线程) 或 'process'(进程)
+            test_case_filter: 只运行指定名称的测试用例
         """
-        super().__init__(config_file, workspace)
+        super().__init__(config_file, workspace, test_case_filter)
         self.max_workers = max_workers
         self.execution_mode = execution_mode
         self.lock = threading.Lock()  # 用于线程安全的结果更新
@@ -31,7 +33,12 @@ class ParallelRunner(BaseRunner):
         """并行运行所有测试用例"""
         try:
             self.load_test_cases()
+            self._apply_test_case_filter()
             self.results["total"] = len(self.test_cases)
+            
+            if self.results["total"] == 0:
+                print("No test cases to run.")
+                return False
             
             # 执行setup任务
             self.setup_manager.setup_all()

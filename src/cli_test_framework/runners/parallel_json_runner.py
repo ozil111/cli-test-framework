@@ -13,7 +13,8 @@ class ParallelJSONRunner(ParallelRunner):
     """并行JSON测试运行器"""
     
     def __init__(self, config_file="test_cases.json", workspace: Optional[str] = None,
-                 max_workers: Optional[int] = None, execution_mode: str = "thread"):
+                 max_workers: Optional[int] = None, execution_mode: str = "thread",
+                 test_case_filter: Optional[list] = None):
         """
         初始化并行JSON运行器
         
@@ -22,6 +23,7 @@ class ParallelJSONRunner(ParallelRunner):
             workspace: 工作目录
             max_workers: 最大并发数
             execution_mode: 执行模式，'thread' 或 'process'
+            test_case_filter: 只运行指定名称的测试用例
         """
         # 1. 自动感知：获取物理核心数
         # 如果获取失败默认为 4，留 2 个核给系统/Python (防止 GUI 卡死)
@@ -34,7 +36,7 @@ class ParallelJSONRunner(ParallelRunner):
         if max_workers is None:
             max_workers = self.total_physical
             
-        super().__init__(config_file, workspace, max_workers, execution_mode)
+        super().__init__(config_file, workspace, max_workers, execution_mode, test_case_filter)
         # Backward-compatible attribute for potential external patches/tests
         self.path_resolver = PathResolver(self.workspace)
         self._print_lock = threading.Lock()  # 用于控制输出顺序

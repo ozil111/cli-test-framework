@@ -16,3 +16,4 @@ dist
 dist_package
 
 build
+test_output.txt
