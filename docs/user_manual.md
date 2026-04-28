@@ -78,6 +78,18 @@ runner = JSONRunner(
 success = runner.run_tests()
 ```
 
+3. Run only specified test case(s):
+```python
+from cli_test_framework.runners import JSONRunner
+
+runner = JSONRunner(
+    config_file="test_cases.json",
+    workspace="/path/to/workspace",
+    test_case_filter=["test_ls_command", "test_echo_command"]
+)
+success = runner.run_tests()
+```
+
 ### Using the Command Line
 
 ```bash
@@ -86,6 +98,12 @@ cli-test run test_cases.json
 
 # Run tests in parallel
 cli-test run test_cases.json --parallel --workers 4
+
+# Run only specified test case(s)
+cli-test run test_cases.json --test-case test_ls_command
+
+# Run multiple specified test cases
+cli-test run test_cases.json -t test_ls_command -t test_echo_command
 ```
 
 ## Test Case Definition
@@ -407,6 +425,52 @@ compare-files binary1.bin binary2.bin --chunk-size 16384
 
 ## Advanced Features
 
+### Specifying Test Cases
+
+You can run only specific test cases by name using the `test_case_filter` parameter (Python API) or the `--test-case` / `-t` flag (CLI).
+
+#### CLI Usage
+
+```bash
+# Run a single test case by name
+cli-test run test_cases.json --test-case test_ls_command
+
+# Run multiple test cases (repeat the flag)
+cli-test run test_cases.json -t test_ls_command -t test_echo_command
+
+# Works with parallel mode too
+cli-test run test_cases.json --parallel --test-case test_ls_command
+```
+
+#### Python API Usage
+
+```python
+from cli_test_framework.runners import JSONRunner, ParallelJSONRunner, YAMLRunner
+
+# With JSONRunner
+runner = JSONRunner(
+    config_file="test_cases.json",
+    test_case_filter=["test_ls_command", "test_echo_command"]
+)
+
+# With YAMLRunner
+runner = YAMLRunner(
+    config_file="test_cases.yaml",
+    test_case_filter=["test_case_1"]
+)
+
+# With ParallelJSONRunner
+runner = ParallelJSONRunner(
+    config_file="test_cases.json",
+    test_case_filter=["heavy_test"],
+    max_workers=4
+)
+
+success = runner.run_tests()
+```
+
+If a specified test case name is not found, a warning will be printed. The filter matches test case names exactly.
+
 ### Custom Assertions
 ```python
 from cli_test_framework.assertions import BaseAssertion
@@ -474,24 +538,37 @@ runner = JSONRunner(
 #### JSONRunner
 ```python
 class JSONRunner:
-    def __init__(self, config_file, workspace=None, debug=False):
+    def __init__(self, config_file, workspace=None, test_case_filter=None):
         """
         Initialize JSONRunner
         :param config_file: Path to JSON test case file
         :param workspace: Working directory for test execution
-        :param debug: Enable debug mode
+        :param test_case_filter: Optional list of test case names to run (runs all if None)
+        """
+```
+
+#### YAMLRunner
+```python
+class YAMLRunner:
+    def __init__(self, config_file, workspace=None, test_case_filter=None):
+        """
+        Initialize YAMLRunner
+        :param config_file: Path to YAML test case file
+        :param workspace: Working directory for test execution
+        :param test_case_filter: Optional list of test case names to run (runs all if None)
         """
 ```
 
 #### ParallelJSONRunner
 ```python
 class ParallelJSONRunner:
-    def __init__(self, config_file, max_workers=None, execution_mode="thread"):
+    def __init__(self, config_file, max_workers=None, execution_mode="thread", test_case_filter=None):
         """
         Initialize ParallelJSONRunner
         :param config_file: Path to JSON test case file
         :param max_workers: Maximum number of parallel workers
         :param execution_mode: "thread" or "process"
+        :param test_case_filter: Optional list of test case names to run (runs all if None)
         """
 ```
 

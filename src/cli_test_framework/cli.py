@@ -40,6 +40,8 @@ Examples:
                            help='Parallel execution mode (default: thread)')
     run_parser.add_argument('--output-format', choices=['text', 'json', 'html'], default='text',
                            help='Output format for test results')
+    run_parser.add_argument('--test-case', '-t', action='append', default=None,
+                           help='Run only specified test case(s) by name (can be used multiple times)')
     run_parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
@@ -64,19 +66,22 @@ def run_tests(args):
                 config_file=str(config_file),
                 workspace=args.workspace,
                 max_workers=args.workers,
-                execution_mode=args.execution_mode
+                execution_mode=args.execution_mode,
+                test_case_filter=args.test_case
             )
         else:
             # Use appropriate single-threaded runner
             if file_ext in ['.json']:
                 runner = JSONRunner(
                     config_file=str(config_file),
-                    workspace=args.workspace
+                    workspace=args.workspace,
+                    test_case_filter=args.test_case
                 )
             elif file_ext in ['.yaml', '.yml']:
                 runner = YAMLRunner(
                     config_file=str(config_file),
-                    workspace=args.workspace
+                    workspace=args.workspace,
+                    test_case_filter=args.test_case
                 )
             else:
                 print(f"Error: Unsupported configuration file format: {file_ext}")

@@ -7,13 +7,15 @@ from .setup import SetupManager, EnvironmentSetup
 from .execution import execute_single_test_case
 
 class BaseRunner(ABC):
-    def __init__(self, config_file: str, workspace: Optional[str] = None):
+    def __init__(self, config_file: str, workspace: Optional[str] = None,
+                 test_case_filter: Optional[List[str]] = None):
         if workspace:
             self.workspace = Path(workspace)
         else:
             self.workspace = Path(__file__).parent.parent.parent
         self.config_path = self.workspace / config_file
         self.test_cases: List[TestCase] = []
+        self.test_case_filter: Optional[List[str]] = test_case_filter
         self.results: Dict[str, Any] = {
             "total": 0,
             "passed": 0,
@@ -44,11 +46,27 @@ class BaseRunner(ABC):
         #         # 动态加载自定义setup插件
         #         pass
 
+    def _apply_test_case_filter(self) -> None:
+        """根据 test_case_filter 过滤测试用例"""
+        if self.test_case_filter:
+            original_count = len(self.test_cases)
+            self.test_cases = [tc for tc in self.test_cases if tc.name in self.test_case_filter]
+            filtered_out = original_count - len(self.test_cases)
+            if filtered_out > 0:
+                print(f"Filtered out {filtered_out} test case(s). Running {len(self.test_cases)} specified case(s).")
+            if not self.test_cases:
+                print(f"Warning: No matching test cases found for: {self.test_case_filter}")
+
     def run_tests(self) -> bool:
         """Run all test cases and return whether all tests passed"""
         try:
             self.load_test_cases()
+            self._apply_test_case_filter()
             self.results["total"] = len(self.test_cases)
+            
+            if self.results["total"] == 0:
+                print("No test cases to run.")
+                return False
             
             # 执行setup任务
             self.setup_manager.setup_all()

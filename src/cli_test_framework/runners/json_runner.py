@@ -8,8 +8,9 @@ import json
 import sys
 
 class JSONRunner(BaseRunner):
-    def __init__(self, config_file="test_cases.json", workspace: Optional[str] = None):
-        super().__init__(config_file, workspace)
+    def __init__(self, config_file="test_cases.json", workspace: Optional[str] = None,
+                 test_case_filter: Optional[list] = None):
+        super().__init__(config_file, workspace, test_case_filter)
         # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
 
