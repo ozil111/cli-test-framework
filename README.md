@@ -89,6 +89,14 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 ### 0.4.1
 - Multi-thread / multi-process parallel execution, 3-5x speedup
 
+## Contributing
+
+Before submitting a PR, please make sure all tests pass:
+
+```bash
+python tests\run_all.py
+```
+
 ## License
 
 MIT

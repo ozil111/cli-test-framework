@@ -89,6 +89,14 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 ### 0.4.1
 - 支持多线程、多进程并行执行，效率提升 3-5 倍
 
+## 参与协作
+
+提交 PR 前，请确保测试全部通过：
+
+```bash
+python tests\run_all.py
+```
+
 ## 许可证
 
 MIT

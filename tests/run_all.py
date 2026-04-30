@@ -7,6 +7,7 @@ Usage:
 """
 
 import argparse
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -52,7 +53,7 @@ def main():
     # is used instead of whichever pytest.exe appears first on PATH.
     pytest_args = [sys.executable, "-m", "pytest", *targets]
     if args.extra:
-        pytest_args.extend(args.extra.split())
+        pytest_args.extend(shlex.split(args.extra))
 
     print(f"Running: {' '.join(pytest_args)}")
     result = subprocess.run(pytest_args, cwd=Path(__file__).resolve().parent.parent)

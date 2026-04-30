@@ -12,6 +12,9 @@ latex
 
 dist
 *.pyc
+__pycache__/
+.pytest_cache/
+.tmp/
 
 dist_package
 

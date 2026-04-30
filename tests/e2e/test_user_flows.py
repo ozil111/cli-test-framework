@@ -1,7 +1,7 @@
 import json
 import os
+import sys
 import tempfile
-import textwrap
 from unittest import SkipTest
 
 from cli_test_framework.runners.json_runner import JSONRunner
@@ -16,13 +16,13 @@ def test_json_runner_end_to_end():
         "test_cases": [
             {
                 "name": "echo with env",
-                "command": 'python -c "import os; print(os.environ.get(\'E2E_ENV\'))"',
+                "command": f'"{sys.executable}" -c "import os; print(os.environ.get(\'E2E_ENV\'))"',
                 "args": [],
                 "expected": {"return_code": 0, "output_contains": ["json_e2e"]},
             },
             {
                 "name": "simple echo",
-                "command": "python -c \"print('hello-e2e')\"",
+                "command": f'"{sys.executable}" -c "print(\'hello-e2e\')"',
                 "args": [],
                 "expected": {"return_code": 0, "output_contains": ["hello-e2e"]},
             },
@@ -33,9 +33,6 @@ def test_json_runner_end_to_end():
         json.dump(config, f, ensure_ascii=False, indent=2)
 
     runner = JSONRunner(config_path, workspace=temp_dir)
-    # Avoid path resolution mangling "-c" scripts in this test
-    runner.path_resolver.parse_command_string = lambda cmd: cmd
-    runner.path_resolver.resolve_paths = lambda args: args
     success = runner.run_tests()
 
     assert success
@@ -52,29 +49,23 @@ def test_yaml_runner_end_to_end():
     except ImportError:
         raise SkipTest("pyyaml not installed")
     temp_dir = tempfile.mkdtemp()
-    yaml_content = textwrap.dedent(
-        """
-        setup:
-          environment_variables:
-            E2E_ENV: yaml_e2e
-        test_cases:
-          - name: yaml echo
-            command: "python -c \\"import os; print(os.environ.get('E2E_ENV'))\\""
-            args: []
-            expected:
-              return_code: 0
-              output_contains:
-                - yaml_e2e
-        """
-    ).strip()
+    config = {
+        "setup": {"environment_variables": {"E2E_ENV": "yaml_e2e"}},
+        "test_cases": [
+            {
+                "name": "yaml echo",
+                "command": f'"{sys.executable}" -c "import os; print(os.environ.get(\'E2E_ENV\'))"',
+                "args": [],
+                "expected": {"return_code": 0, "output_contains": ["yaml_e2e"]},
+            }
+        ],
+    }
 
     yaml_path = os.path.join(temp_dir, "e2e.yaml")
     with open(yaml_path, "w", encoding="utf-8") as f:
-        f.write(yaml_content)
+        yaml.safe_dump(config, f, allow_unicode=True)
 
     runner = YAMLRunner(yaml_path, workspace=temp_dir)
-    runner.path_resolver.parse_command_string = lambda cmd: cmd
-    runner.path_resolver.resolve_paths = lambda args: args
     success = runner.run_tests()
 
     assert success
