@@ -414,7 +414,7 @@ class H5Comparator(BaseComparator):
                                     if self.show_content_diff:
                                         # For non-numeric arrays, find the first difference
                                         diff_indices = np.where(filtered_data1 != filtered_data2)
-                                        for idx in zip(*diff_indices)[:10]:
+                                        for idx in list(zip(*diff_indices))[:10]:
                                             position = f"{table_name}[{','.join(map(str, idx))}]"
                                             differences.append(self._create_difference(
                                                 position=position,
