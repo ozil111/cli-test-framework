@@ -98,7 +98,7 @@ def run_tests(args):
         if hasattr(runner, 'results'):
             results = runner.results
             print(f"\nTest Results:")
-            print(f"Total tests: {results.get('total_tests', 0)}")
+            print(f"Total tests: {results.get('total', 0)}")
             print(f"Passed: {results.get('passed', 0)}")
             print(f"Failed: {results.get('failed', 0)}")
             

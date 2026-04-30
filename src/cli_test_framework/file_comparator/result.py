@@ -8,6 +8,9 @@
 @date 2025
 """
 
+import json
+
+
 class Difference:
     """
     @brief Represents a single difference between files
@@ -189,3 +192,10 @@ class ComparisonResult:
             
         html.append("</body></html>")
         return "\n".join(html)
+
+    def to_json(self):
+        """
+        @brief Convert the comparison result to JSON format
+        @return str: JSON representation of the comparison result
+        """
+        return json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str)
