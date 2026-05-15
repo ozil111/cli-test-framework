@@ -128,12 +128,13 @@ class ParallelRunner(BaseRunner):
         """线程安全地更新测试结果"""
         with self.lock:
             self.results["details"].append(result)
+            duration = result.get("duration", 0)
             if result["status"] == "passed":
                 self.results["passed"] += 1
-                print(f"✓ Test {test_index} passed: {case.name}")
+                print(f"✓ Test {test_index} passed: {case.name} ({duration:.2f}s)")
             else:
                 self.results["failed"] += 1
-                print(f"✗ Test {test_index} failed: {case.name}")
+                print(f"✗ Test {test_index} failed: {case.name} ({duration:.2f}s)")
                 if result["message"]:
                     print(f"  Error: {result['message']}")
     

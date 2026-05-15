@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -71,6 +72,8 @@ class BaseRunner(ABC):
             # 执行setup任务
             self.setup_manager.setup_all()
             
+            total_start_time = time.time()
+            
             print(f"\nStarting test execution... Total tests: {self.results['total']}")
             print("=" * 50)
             
@@ -78,17 +81,19 @@ class BaseRunner(ABC):
                 print(f"\nRunning test {i}/{self.results['total']}: {case.name}")
                 result = self.run_single_test(case)
                 self.results["details"].append(result)
+                duration = result.get("duration", 0)
                 if result["status"] == "passed":
                     self.results["passed"] += 1
-                    print(f"✓ Test passed: {case.name}")
+                    print(f"✓ Test passed: {case.name} ({duration:.2f}s)")
                 else:
                     self.results["failed"] += 1
-                    print(f"✗ Test failed: {case.name}")
+                    print(f"✗ Test failed: {case.name} ({duration:.2f}s)")
                     if result["message"]:
                         print(f"  Error: {result['message']}")
                     
+            total_duration = time.time() - total_start_time
             print("\n" + "=" * 50)
-            print(f"Test execution completed. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
+            print(f"Test execution completed in {total_duration:.2f}s. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
             return self.results["failed"] == 0
         finally:
             # 确保teardown总是被执行
