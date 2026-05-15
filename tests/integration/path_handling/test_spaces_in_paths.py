@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import tempfile
 
 from cli_test_framework.runners.json_runner import JSONRunner
@@ -82,4 +83,34 @@ def test_parallel_runner_loads_space_paths():
     runner.load_test_cases()
 
     assert_loaded_cases(runner.test_cases, config)
+
+
+def test_runner_executes_script_argument_with_spaces(tmp_path):
+    script_dir = tmp_path / "tools with spaces"
+    script_dir.mkdir()
+    script_path = script_dir / "emit value.py"
+    script_path.write_text(
+        "import sys\n"
+        "print('script-path-ok')\n"
+        "print(sys.argv[1])\n",
+        encoding="utf-8",
+    )
+    config = {
+        "test_cases": [
+            {
+                "name": "script path with spaces",
+                "command": f'"{sys.executable}"',
+                "args": [str(script_path.relative_to(tmp_path)), "payload value"],
+                "expected": {
+                    "return_code": 0,
+                    "output_contains": ["script-path-ok", "payload value"],
+                },
+            }
+        ]
+    }
+    config_path = write_config(str(tmp_path), config)
+
+    runner = JSONRunner(config_path, str(tmp_path))
+
+    assert runner.run_tests()
 

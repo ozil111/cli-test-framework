@@ -12,8 +12,15 @@ latex
 
 dist
 *.pyc
+__pycache__/
+.pytest_cache/
+.tmp/
 
 dist_package
 
 build
 test_output.txt
+/.codebuddy/rules
+src/cli_test_framework/file_comparator/__pycache__/json_comparator.cpython-312.pyc
+/src/cli_test_framework/file_comparator/__pycache__
+.coverage

@@ -3,6 +3,7 @@ from typing import List, Union
 import shlex
 import os
 import shutil
+import subprocess
 
 WorkspaceLike = Union[str, Path]
 
@@ -39,6 +40,12 @@ def resolve_paths(args: List[str], workspace: WorkspaceLike) -> List[str]:
     """根据标识符或启发式规则解析参数列表中的路径"""
     workspace_path = _as_workspace_path(workspace)
     return [_resolve_relative_part(arg, workspace_path) for arg in args]
+
+
+def _shell_join(parts: List[str]) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline(parts)
+    return shlex.join(parts)
 
 
 def resolve_command(command: str, workspace: WorkspaceLike) -> str:
@@ -105,7 +112,7 @@ def parse_command_string(command_string: str, workspace: WorkspaceLike) -> str:
                 for part in remaining_parts:
                     resolved_parts.append(_resolve_relative_part(part, workspace_path))
 
-            return f"{resolved_command} {' '.join(resolved_parts)}"
+            return _shell_join([resolved_command, *resolved_parts])
 
         except ValueError:
             pass
@@ -136,7 +143,7 @@ def parse_command_string(command_string: str, workspace: WorkspaceLike) -> str:
                     _resolve_relative_part(p, workspace_path) for p in remaining_parts
                 ]
 
-            return f"{resolved_command} {' '.join(resolved_parts)}"
+            return _shell_join([resolved_command, *resolved_parts])
 
 
 def _starts_with_absolute_path(command_string: str) -> bool:
@@ -168,7 +175,7 @@ def _parse_absolute_path_command(command_string: str, workspace: WorkspaceLike) 
                             _resolve_relative_part(p, workspace_path)
                             for p in remaining_parts
                         ]
-                        return f"{command_part} {' '.join(resolved_parts)}"
+                        return _shell_join([command_part, *resolved_parts])
                     else:
                         return command_part
 
@@ -182,7 +189,7 @@ def _parse_absolute_path_command(command_string: str, workspace: WorkspaceLike) 
     resolved_parts = [
         _resolve_relative_part(p, workspace_path) for p in remaining_parts
     ]
-    return f"{command_part} {' '.join(resolved_parts)}"
+    return _shell_join([command_part, *resolved_parts])
 
 
 class PathResolver:

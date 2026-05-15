@@ -42,6 +42,10 @@ Examples:
                            help='Output format for test results')
     run_parser.add_argument('--test-case', '-t', action='append', default=None,
                            help='Run only specified test case(s) by name (can be used multiple times)')
+    run_parser.add_argument('--history-dir',
+                           help='Directory for .symtest runtime history (enables smart scheduling & regression detection)')
+    run_parser.add_argument('--regression-threshold', type=float, default=1.5,
+                           help='Warn if a case runs N times slower than historical average (default: 1.5)')
     run_parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     
@@ -59,6 +63,11 @@ def run_tests(args):
     # Determine file type
     file_ext = config_file.suffix.lower()
     
+    # Use getattr for backward compatibility with external callers that
+    # construct Namespace objects without the newer arguments.
+    history_dir = getattr(args, 'history_dir', None)
+    regression_threshold = getattr(args, 'regression_threshold', 1.5)
+    
     try:
         if args.parallel:
             # Use parallel runner
@@ -67,7 +76,9 @@ def run_tests(args):
                 workspace=args.workspace,
                 max_workers=args.workers,
                 execution_mode=args.execution_mode,
-                test_case_filter=args.test_case
+                test_case_filter=args.test_case,
+                history_dir=history_dir,
+                regression_threshold=regression_threshold,
             )
         else:
             # Use appropriate single-threaded runner
@@ -75,13 +86,17 @@ def run_tests(args):
                 runner = JSONRunner(
                     config_file=str(config_file),
                     workspace=args.workspace,
-                    test_case_filter=args.test_case
+                    test_case_filter=args.test_case,
+                    history_dir=history_dir,
+                    regression_threshold=regression_threshold,
                 )
             elif file_ext in ['.yaml', '.yml']:
                 runner = YAMLRunner(
                     config_file=str(config_file),
                     workspace=args.workspace,
-                    test_case_filter=args.test_case
+                    test_case_filter=args.test_case,
+                    history_dir=history_dir,
+                    regression_threshold=regression_threshold,
                 )
             else:
                 print(f"Error: Unsupported configuration file format: {file_ext}")
@@ -98,7 +113,7 @@ def run_tests(args):
         if hasattr(runner, 'results'):
             results = runner.results
             print(f"\nTest Results:")
-            print(f"Total tests: {results.get('total_tests', 0)}")
+            print(f"Total tests: {results.get('total', 0)}")
             print(f"Passed: {results.get('passed', 0)}")
             print(f"Failed: {results.get('failed', 0)}")
             

@@ -1,340 +1,279 @@
-# CLI Testing Framework User Manual
+# CLI Test Framework 使用说明书
 
-## Table of Contents
-1. [Introduction](#introduction)
-2. [Installation](#installation)
-3. [Basic Usage](#basic-usage)
-4. [Test Case Definition](#test-case-definition)
-5. [Setup Module](#setup-module)
-6. [Parallel Testing](#parallel-testing)
-7. [Sequence Testing](#sequence-testing)
-8. [File Comparison](#file-comparison)
-9. [Advanced Features](#advanced-features)
-10. [Troubleshooting](#troubleshooting)
-11. [API Reference](#api-reference)
-12. [Examples](#examples)
+## 目录
 
+- [安装](#安装)
+- [测试用例定义](#测试用例定义)
+- [运行测试](#运行测试)
+- [Setup 模块](#setup-模块)
+- [并行测试](#并行测试)
+- [顺序步骤测试](#顺序步骤测试)
+- [资源感知调度](#资源感知调度)
+- [历史记录与回归检测](#历史记录与回归检测)
+- [文件比较](#文件比较)
+- [扩展开发](#扩展开发)
 
+## 安装
 
-## Introduction
-
-The CLI Testing Framework is a powerful tool designed for testing command-line applications and scripts. It provides a structured way to define, execute, and verify test cases, with support for parallel execution and advanced file comparison capabilities.
-
-### Key Features
-- Parallel test execution with thread and process support
-- Sequence test execution with multi-step fail-fast
-- JSON/YAML test case definition
-- Advanced file comparison capabilities
-- Comprehensive reporting
-- Extensible architecture
-
-## Installation
-
-### Prerequisites
-- Python 3.9 or higher
-- pip package manager
-
-### Basic Installation
 ```bash
 pip install cli-test-framework
 ```
 
-### Development Installation
+要求：Python >= 3.9
+
+YAML 支持需额外安装：
+
 ```bash
-git clone https://github.com/ozil111/cli-test-framework.git
-cd cli-test-framework
-pip install -e .
+pip install pyyaml
 ```
 
-## Basic Usage
+## 测试用例定义
 
-### Creating a Test Case
+### JSON 格式
 
-1. Create a JSON test case file (e.g., `test_cases.json`):
 ```json
 {
     "test_cases": [
         {
-            "name": "Basic Command Test",
+            "name": "测试名称",
             "command": "echo",
-            "args": ["Hello, World!"],
+            "args": ["Hello"],
+            "timeout": 60,
+            "resources": {
+                "cpu_cores": 2,
+                "estimated_time": 300,
+                "min_memory_mb": 1024,
+                "priority": 5
+            },
             "expected": {
                 "return_code": 0,
-                "output_contains": ["Hello, World!"]
+                "output_contains": ["Hello"],
+                "output_matches": [".*regex.*"]
             }
         }
     ]
 }
 ```
 
-2. Run the test:
-```python
-from cli_test_framework.runners import JSONRunner
-
-runner = JSONRunner(
-    config_file="test_cases.json",
-    workspace="/path/to/workspace"
-)
-success = runner.run_tests()
-```
-
-3. Run only specified test case(s):
-```python
-from cli_test_framework.runners import JSONRunner
-
-runner = JSONRunner(
-    config_file="test_cases.json",
-    workspace="/path/to/workspace",
-    test_case_filter=["test_ls_command", "test_echo_command"]
-)
-success = runner.run_tests()
-```
-
-### Using the Command Line
-
-```bash
-# Run tests from a JSON file
-cli-test run test_cases.json
-
-# Run tests in parallel
-cli-test run test_cases.json --parallel --workers 4
-
-# Run only specified test case(s)
-cli-test run test_cases.json --test-case test_ls_command
-
-# Run multiple specified test cases
-cli-test run test_cases.json -t test_ls_command -t test_echo_command
-```
-
-## Test Case Definition
-
-### JSON Format
-
-```json
-{
-    "test_cases": [
-        {
-            "name": "Test Case Name",
-            "command": "command_to_execute",
-            "args": ["arg1", "arg2"],
-            "expected": {
-                "return_code": 0,
-                "output_contains": ["expected text"],
-                "output_matches": [".*regex pattern.*"]
-            }
-        }
-    ]
-}
-```
-
-### YAML Format
+### YAML 格式
 
 ```yaml
 test_cases:
-  - name: Test Case Name
-    command: command_to_execute
-    args:
-      - arg1
-      - arg2
+  - name: 测试名称
+    command: echo
+    args: ["Hello"]
+    timeout: 60
+    resources:
+      cpu_cores: 2
+      estimated_time: 300
+      min_memory_mb: 1024
+      priority: 5
     expected:
       return_code: 0
       output_contains:
-        - expected text
+        - "Hello"
       output_matches:
-        - ".*regex pattern.*"
+        - ".*regex.*"
 ```
 
-## Setup Module
+### 字段说明
 
-The Setup Module provides a plugin-based system for executing pre-test setup tasks and post-test cleanup. It's designed to be extensible and supports multiple setup plugins running in sequence.
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `name` | 是 | 测试用例名称 |
+| `command` | 是 | 要执行的命令 |
+| `args` | 否 | 命令参数列表 |
+| `timeout` | 否 | 超时秒数，默认 3600，设 `null` 无限制 |
+| `resources` | 否 | 资源配置，见[资源感知调度](#资源感知调度) |
+| `expected.return_code` | 否 | 期望返回码 |
+| `expected.output_contains` | 否 | 输出需包含的字符串列表 |
+| `expected.output_matches` | 否 | 输出需匹配的正则列表 |
 
-### Key Features
-- **Plugin Architecture**: Extensible design allowing custom setup plugins
-- **Built-in Environment Plugin**: Set environment variables for tests
-- **Full Runner Support**: Works with JSONRunner, YAMLRunner, and ParallelJSONRunner
-- **Lifecycle Management**: Automatic setup and teardown with proper cleanup
+## 运行测试
 
-### Environment Variable Setup
+### 命令行
 
-#### JSON Configuration
+```bash
+# 运行 JSON 测试
+cli-test run test_cases.json
+
+# 运行 YAML 测试
+cli-test run test_cases.yaml
+
+# 指定工作目录
+cli-test run test_cases.json --workspace /path/to/project
+
+# 并行运行
+cli-test run test_cases.json --parallel --workers 4
+
+# 指定并行模式
+cli-test run test_cases.json --parallel --execution-mode process
+
+# 只运行指定用例
+cli-test run test_cases.json -t test_name_1 -t test_name_2
+
+# 详细输出
+cli-test run test_cases.json --verbose
+
+# 调试模式
+cli-test run test_cases.json --debug
+
+# 输出格式
+cli-test run test_cases.json --output-format json|html|text
+
+# 启用历史记录（智能调度 + 回归检测）
+cli-test run test_cases.json --history-dir ./hist
+
+# 自定义回归检测阈值（默认 1.5 倍）
+cli-test run test_cases.json --history-dir ./hist --regression-threshold 2.0
+```
+
+### Python API
+
+```python
+from cli_test_framework.runners import JSONRunner, YAMLRunner, ParallelJSONRunner
+
+# 顺序运行
+runner = JSONRunner(
+    config_file="test_cases.json",
+    workspace="/path/to/project",    # 可选，默认项目根目录
+    test_case_filter=["test_1"],     # 可选，只运行指定用例
+    history_dir="./hist",            # 可选，启用历史记录与回归检测
+    regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
+)
+success = runner.run_tests()
+
+# YAML 格式
+runner = YAMLRunner(config_file="test_cases.yaml")
+
+# 并行运行
+runner = ParallelJSONRunner(
+    config_file="test_cases.json",
+    max_workers=4,                   # 可选，默认 CPU 核心数
+    execution_mode="thread",         # "thread" 或 "process"
+    test_case_filter=["test_1"],
+    history_dir="./hist",            # 可选，启用历史记录与智能调度
+    regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
+)
+success = runner.run_tests()
+```
+
+### 获取结果
+
+```python
+runner.run_tests()
+
+# 汇总
+runner.results["total_tests"]
+runner.results["passed"]
+runner.results["failed"]
+
+# 详情
+for detail in runner.results["details"]:
+    print(detail["name"], detail["status"], detail.get("message", ""))
+```
+
+## Setup 模块
+
+Setup 模块在测试前执行初始化、测试后执行清理。
+
+### 环境变量（配置文件方式）
+
+JSON：
+
 ```json
 {
-  "setup": {
-    "environment_variables": {
-      "TEST_ENV": "development",
-      "DEBUG_MODE": "true",
-      "API_URL": "http://localhost:8080",
-      "DATABASE_URL": "sqlite:///test.db"
-    }
-  },
-  "test_cases": [
-    {
-      "name": "Test with environment variables",
-      "command": "python",
-      "args": ["-c", "import os; print(f'Env: {os.environ.get(\"TEST_ENV\")}')"],
-      "expected": {
-        "return_code": 0,
-        "output_contains": ["Env: development"]
-      }
-    }
-  ]
+    "setup": {
+        "environment_variables": {
+            "TEST_ENV": "development",
+            "API_URL": "http://localhost:8080"
+        }
+    },
+    "test_cases": [...]
 }
 ```
 
-#### YAML Configuration
+YAML：
+
 ```yaml
 setup:
   environment_variables:
-    TEST_ENV: "production"
-    DATABASE_URL: "postgresql://localhost:5432/test"
-    MAX_CONNECTIONS: "10"
-    TIMEOUT_SECONDS: "30"
-
+    TEST_ENV: "development"
+    API_URL: "http://localhost:8080"
 test_cases:
-  - name: "Test database environment"
-    command: "python"
-    args: 
-      - "-c"
-      - "import os; print(f'DB: {os.environ.get(\"DATABASE_URL\")}')"
-    expected:
-      return_code: 0
-      output_contains:
-        - "DB: postgresql://localhost:5432/test"
+  [...]
 ```
 
-### Custom Setup Plugins
+配置文件中的环境变量会在测试前设置、测试后恢复原值。
 
-#### Creating Custom Plugins
+### 自定义 Setup 插件
+
 ```python
-from cli_test_framework import BaseSetup
+from cli_test_framework import BaseSetup, JSONRunner
 
 class DatabaseSetup(BaseSetup):
     def setup(self):
-        """Initialize test database"""
-        print("Setting up test database...")
-        # Your database initialization code here
-        
+        # 初始化操作
+        pass
+
     def teardown(self):
-        """Clean up test database"""
-        print("Cleaning up test database...")
-        # Your database cleanup code here
+        # 清理操作（即使测试失败也会执行）
+        pass
 
-class ServiceSetup(BaseSetup):
-    def setup(self):
-        """Start test services"""
-        self.service_port = self.config.get('port', 8080)
-        print(f"Starting test service on port {self.service_port}")
-        # Your service startup code here
-        
-    def teardown(self):
-        """Stop test services"""
-        print("Stopping test services...")
-        # Your service shutdown code here
-```
-
-#### Using Custom Plugins
-```python
-from cli_test_framework import JSONRunner
-
-# Create runner
 runner = JSONRunner("test_cases.json")
-
-# Add custom setup plugins
-db_setup = DatabaseSetup({"connection": "test_db"})
-service_setup = ServiceSetup({"port": 9090})
-
-runner.setup_manager.add_setup(db_setup)
-runner.setup_manager.add_setup(service_setup)
-
-# Run tests (setup will be executed automatically)
+runner.setup_manager.add_setup(DatabaseSetup({"connection": "test_db"}))
 success = runner.run_tests()
 ```
 
-### Execution Flow
+多个插件按添加顺序执行 setup，按逆序执行 teardown。
 
-1. **Load Configuration**: Read setup configuration from test file
-2. **Setup Phase**: Execute all setup plugins in order
-   - Environment variables are set
-   - Custom setups are executed
-   - Setup status is reported
-3. **Test Execution**: Run all test cases with setup environment
-4. **Teardown Phase**: Clean up all setups in reverse order
-   - Environment variables are restored
-   - Custom cleanups are executed
-   - Cleanup is guaranteed even if tests fail
+### 执行顺序
 
-### Best Practices
+1. 加载配置文件中的 setup 配置（环境变量等）
+2. 执行所有 setup 插件的 `setup()`（按添加顺序）
+3. 运行测试
+4. 执行所有 setup 插件的 `teardown()`（逆序，保证执行）
 
-1. **Idempotent Operations**: Make setup operations safe to run multiple times
-2. **Proper Cleanup**: Always implement teardown to avoid side effects
-3. **Error Handling**: Setup failures stop test execution, teardown failures don't
-4. **Resource Management**: Use try-finally patterns in custom plugins
-5. **Configuration Validation**: Check required configuration parameters in setup
+## 并行测试
 
-### Integration Examples
-
-#### With JSON Runner
-```bash
-cli-test test_with_setup.json
-```
-
-#### With YAML Runner
-```bash
-cli-test test_with_setup.yaml --runner yaml
-```
-
-#### With Parallel Runner
-```bash
-cli-test test_with_setup.json --runner parallel --max-workers 4
-```
-
-Note: In parallel mode, setup and teardown run in the main thread to ensure environment consistency.
-
-## Parallel Testing
-
-### Thread Mode
 ```python
 from cli_test_framework.runners import ParallelJSONRunner
 
 runner = ParallelJSONRunner(
     config_file="test_cases.json",
-    max_workers=4,
-    execution_mode="thread"
+    max_workers=4,                # 最大并发数，默认 CPU 核心数
+    execution_mode="thread"       # "thread" 或 "process"
 )
 success = runner.run_tests()
+
+# 回退到顺序执行
+runner.run_tests_sequential()
 ```
 
-### Process Mode
-```python
-runner = ParallelJSONRunner(
-    config_file="test_cases.json",
-    max_workers=2,
-    execution_mode="process"
-)
-success = runner.run_tests()
-```
+**线程模式**：共享内存，支持资源感知调度（见下节）。  
+**进程模式**：进程隔离，不支持资源调度。
 
-## Sequence Testing
+## 顺序步骤测试
 
-Sequence testing allows a single test case to contain multiple ordered steps that execute sequentially. If any step fails, subsequent steps are skipped (fail-fast).
+一个测试用例可包含多个有序步骤，某步失败则跳过后续步骤（fail-fast）。
 
-### JSON Format
+### JSON
 
 ```json
 {
     "test_cases": [
         {
-            "name": "Multi-step Test",
+            "name": "多步骤测试",
             "steps": [
                 {
                     "command": "echo",
                     "args": ["step1"],
-                    "expected": { "return_code": 0, "output_contains": ["step1"] }
+                    "expected": { "return_code": 0 }
                 },
                 {
                     "command": "echo",
                     "args": ["step2"],
-                    "expected": { "return_code": 0, "output_contains": ["step2"] }
+                    "expected": { "return_code": 0 }
                 }
             ]
         }
@@ -342,322 +281,278 @@ Sequence testing allows a single test case to contain multiple ordered steps tha
 }
 ```
 
-### YAML Format
+### YAML
 
 ```yaml
 test_cases:
-  - name: Multi-step Test
+  - name: 多步骤测试
     steps:
       - command: echo
         args: ["step1"]
         expected:
           return_code: 0
-          output_contains: ["step1"]
       - command: echo
         args: ["step2"]
         expected:
           return_code: 0
-          output_contains: ["step2"]
 ```
 
-Each step supports `command`, `args`, `expected`, and `timeout` fields. When a step fails, the overall result reports which step failed (e.g., "Failed at step 2/3: ...").
+每个 step 支持 `command`、`args`、`expected`、`timeout` 字段。失败时结果会标注失败步骤编号，如 "Failed at step 2/3"。
 
-## File Comparison
+## 资源感知调度
 
-### Basic File Comparison
-```bash
-# Compare two text files
-compare-files file1.txt file2.txt
+仅线程模式生效。通过 `resources` 字段配置，框架自动管理 CPU 核心分配。
 
-# Compare with specific options
-compare-files file1.txt file2.txt --start-line 10 --end-line 20
+```json
+{
+    "name": "Heavy_Simulation",
+    "command": "solver",
+    "args": ["-i", "input.dat"],
+    "timeout": 36000,
+    "resources": {
+        "cpu_cores": 4,
+        "estimated_time": 18000,
+        "min_memory_mb": 16000,
+        "priority": 10
+    },
+    "expected": { "return_code": 0 }
+}
 ```
 
-### JSON File Comparison
-```bash
-# Exact comparison
-compare-files data1.json data2.json
+| 字段 | 说明 |
+|---|---|
+| `cpu_cores` | 所需 CPU 核心数，默认 1。框架用信号量控制分配，超限任务排队等待 |
+| `estimated_time` | 预估耗时（秒），用于 LPT 调度（长任务优先启动） |
+| `min_memory_mb` | 预估内存（MB），目前仅用于日志警告 |
+| `priority` | 优先级 0-10，目前仅用于信息标注 |
 
-# Key-based comparison
-compare-files data1.json data2.json --json-compare-mode key-based --json-key-field id
-```
+框架行为：
+- 自动检测 CPU 核心数，预留 2 核给系统
+- 任务启动时自动注入 `OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`NPROC` 环境变量，防止求解器线程失控
+- 按 `estimated_time` 降序调度（LPT 策略）；若启用 `--history-dir`，优先使用历史 `avg_duration` 排序
 
-### HDF5 File Comparison
-```bash
-# Compare specific tables
-compare-files data1.h5 data2.h5 --h5-table table1,table2
+## 历史记录与回归检测
 
-# Compare with numerical tolerance
-compare-files data1.h5 data2.h5 --h5-rtol 1e-5 --h5-atol 1e-8
+通过 `--history-dir` 指定一个目录，框架会在该目录下维护一个 `.symtest` 文件，记录每个 case 的历史运行时间。
 
-# Use regex patterns for table selection
-compare-files data1.h5 data2.h5 --h5-table-regex "table.*"
+### 工作原理
 
-# Use comma-separated table names with regex (New in 0.3.7)
-compare-files data1.h5 data2.h5 --h5-table-regex "table1,table2,table3"
-```
+1. **首次运行**：目录下没有 `.symtest`，自动创建空文件，排序仍使用配置中的 `estimated_time`
+2. **后续运行**：读取 `.symtest` 中的历史数据，优先使用 `avg_duration` 做调度排序
+3. **回归检测**：每次运行结束后，如果某 case 耗时超过历史均值的阈值倍数（默认 1.5），打印警告
 
-#### Data Filtering (New in 0.3.7)
-
-You can use the `--h5-data-filter` option to only compare data that meets a certain condition. For example:
-
-```bash
-# Only compare values greater than 1e-6
-compare-files data1.h5 data2.h5 --h5-data-filter '>1e-6'
-
-# Only compare absolute values greater than 1e-6
-compare-files data1.h5 data2.h5 --h5-data-filter 'abs>1e-6'
-
-# Only compare values less than or equal to 0.01
-compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
-```
-
-Supported filter expressions: `>`, `>=`, `<`, `<=`, `==`, and `abs` prefix for absolute value filtering.
-
-### Binary File Comparison
-```bash
-# Compare with similarity check
-compare-files binary1.bin binary2.bin --similarity
-
-# Compare with custom chunk size
-compare-files binary1.bin binary2.bin --chunk-size 16384
-```
-
-## Advanced Features
-
-### Specifying Test Cases
-
-You can run only specific test cases by name using the `test_case_filter` parameter (Python API) or the `--test-case` / `-t` flag (CLI).
-
-#### CLI Usage
+### CLI 用法
 
 ```bash
-# Run a single test case by name
-cli-test run test_cases.json --test-case test_ls_command
+# 启用历史记录
+cli-test run test_cases.json --history-dir ./hist
 
-# Run multiple test cases (repeat the flag)
-cli-test run test_cases.json -t test_ls_command -t test_echo_command
-
-# Works with parallel mode too
-cli-test run test_cases.json --parallel --test-case test_ls_command
+# 自定义回归阈值（超过 2 倍均值才警告）
+cli-test run test_cases.json --history-dir ./hist --regression-threshold 2.0
 ```
 
-#### Python API Usage
+### Python API
 
 ```python
-from cli_test_framework.runners import JSONRunner, ParallelJSONRunner, YAMLRunner
+from cli_test_framework.runners import JSONRunner, ParallelJSONRunner
 
-# With JSONRunner
+# 顺序运行 + 历史记录
 runner = JSONRunner(
     config_file="test_cases.json",
-    test_case_filter=["test_ls_command", "test_echo_command"]
+    history_dir="./hist",
+    regression_threshold=2.0,  # 可选，默认 1.5
 )
+success = runner.run_tests()
 
-# With YAMLRunner
-runner = YAMLRunner(
-    config_file="test_cases.yaml",
-    test_case_filter=["test_case_1"]
-)
-
-# With ParallelJSONRunner
+# 并行运行 + 历史记录（调度排序也会使用历史数据）
 runner = ParallelJSONRunner(
     config_file="test_cases.json",
-    test_case_filter=["heavy_test"],
-    max_workers=4
+    history_dir="./hist",
 )
-
 success = runner.run_tests()
 ```
 
-If a specified test case name is not found, a warning will be printed. The filter matches test case names exactly.
+### .symtest 文件格式
 
-### Custom Assertions
-```python
-from cli_test_framework.assertions import BaseAssertion
-
-class CustomAssertion(BaseAssertion):
-    def assert_custom_condition(self, actual, expected):
-        if not self._check_custom_condition(actual, expected):
-            raise AssertionError("Custom condition not met")
+```json
+{
+  "version": 1,
+  "cases": {
+    "case_name_1": {
+      "avg_duration": 3.5,
+      "last_duration": 3.2,
+      "run_count": 5
+    }
+  }
+}
 ```
 
-### Custom Runners
+| 字段 | 说明 |
+|---|---|
+| `avg_duration` | 累计平均耗时（秒），用于调度排序和回归基线 |
+| `last_duration` | 最近一次运行耗时 |
+| `run_count` | 历史运行次数 |
+
+### 回归警告示例
+
+当某 case 运行时间超过历史均值的阈值倍数时：
+
+```
+⚠ WARNING: Case 'heavy_simulation' regressed: 18.2s vs avg 10.5s (1.73x slower)
+```
+
+### 不启用历史记录
+
+不传 `--history-dir` 时行为与之前完全一致，不创建任何额外文件。
+
+### 命令行工具 `compare-files`
+
+```bash
+compare-files <file1> <file2> [选项]
+```
+
+### 通用选项
+
+| 选项 | 说明 |
+|---|---|
+| `--file-type` | 文件类型：`auto`（默认）、`text`、`json`、`h5`、`binary` |
+| `--start-line` | 起始行号（1-based），默认 1 |
+| `--end-line` | 结束行号（1-based） |
+| `--start-column` | 起始列号（1-based），默认 1 |
+| `--end-column` | 结束列号（1-based） |
+| `--encoding` | 文本编码，默认 `utf-8` |
+| `--output-format` | 输出格式：`text`、`json`、`html` |
+| `--verbose` / `-v` | 详细输出 |
+| `--debug` | 调试模式 |
+| `--num-threads` | 并行线程数，默认 4 |
+
+### 文本文件比较
+
+```bash
+compare-files file1.txt file2.txt --start-line 10 --end-line 20
+```
+
+### JSON 文件比较
+
+```bash
+# 精确比较（默认）
+compare-files data1.json data2.json
+
+# 按 key 字段比较
+compare-files data1.json data2.json --json-compare-mode key-based --json-key-field id
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--json-compare-mode` | `exact`（默认）或 `key-based` |
+| `--json-key-field` | key-based 模式的匹配字段，支持逗号分隔多字段 |
+
+### HDF5 文件比较
+
+```bash
+# 比较指定表
+compare-files data1.h5 data2.h5 --h5-table table1,table2
+
+# 用正则匹配表名
+compare-files data1.h5 data2.h5 --h5-table-regex "result_.*"
+
+# 逗号分隔多个正则
+compare-files data1.h5 data2.h5 --h5-table-regex "table1,table2,table3"
+
+# 数值容差
+compare-files data1.h5 data2.h5 --h5-rtol 1e-5 --h5-atol 1e-8
+
+# 数据过滤（只比较满足条件的数据）
+compare-files data1.h5 data2.h5 --h5-data-filter '>1e-6'
+compare-files data1.h5 data2.h5 --h5-data-filter 'abs>1e-9'
+compare-files data1.h5 data2.h5 --h5-data-filter '<=0.01'
+
+# 禁止自动展开 group 路径
+compare-files data1.h5 data2.h5 --h5-table group1 --h5-no-expand-path
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--h5-table` | 指定表名，逗号分隔 |
+| `--h5-table-regex` | 正则匹配表名，逗号分隔多个模式 |
+| `--h5-structure-only` | 只比较结构，不比较内容 |
+| `--h5-show-content-diff` | 显示内容差异详情 |
+| `--h5-rtol` | 相对容差，默认 1e-5 |
+| `--h5-atol` | 绝对容差，默认 1e-8 |
+| `--h5-data-filter` | 数据过滤表达式：`>`, `>=`, `<`, `<=`, `==`，支持 `abs` 前缀 |
+| `--h5-no-expand-path` | 禁止自动展开 group 路径下的子项 |
+
+### 二进制文件比较
+
+```bash
+compare-files binary1.bin binary2.bin --similarity --chunk-size 16384
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--similarity` | 计算相似度指数 |
+| `--chunk-size` | 读取块大小，默认 8192 |
+
+### Python API
+
+```python
+from cli_test_framework.file_comparator import ComparatorFactory
+
+# 文本比较
+comparator = ComparatorFactory.create_comparator("text", encoding="utf-8", verbose=True)
+result = comparator.compare_files("file1.txt", "file2.txt")
+
+# JSON 比较
+comparator = ComparatorFactory.create_comparator("json", compare_mode="key-based", key_field="id")
+result = comparator.compare_files("data1.json", "data2.json")
+
+# HDF5 比较
+comparator = ComparatorFactory.create_comparator("h5", tables=["table1"], rtol=1e-5)
+result = comparator.compare_files("data1.h5", "data2.h5")
+
+# 结果
+result.identical   # bool
+result.differences # list
+```
+
+## 扩展开发
+
+### 自定义 Runner
+
 ```python
 from cli_test_framework.runners import BaseRunner
 
 class CustomRunner(BaseRunner):
     def load_test_cases(self):
-        # Custom test case loading logic
+        # 加载测试用例到 self.test_cases
         pass
 
-    def run_test(self, test_case):
-        # Custom test execution logic
+    def run_single_test(self, test_case):
+        # 执行单个测试，返回结果字典
         pass
 ```
 
-### Output Formats
-```python
-# JSON output
-runner = JSONRunner(config_file="test_cases.json", output_format="json")
+### 自定义 Setup 插件
 
-# HTML output
-runner = JSONRunner(config_file="test_cases.json", output_format="html")
+```python
+from cli_test_framework import BaseSetup
+
+class MySetup(BaseSetup):
+    def setup(self):
+        # self.config 可获取传入的配置字典
+        pass
+
+    def teardown(self):
+        pass
 ```
 
-## Troubleshooting
+### 自定义断言
 
-### Common Issues
-
-1. **Command Not Found**
-   - Ensure the command is in the system PATH
-   - Use absolute paths for scripts
-   - Check command permissions
-
-2. **Parallel Execution Issues**
-   - Reduce number of workers
-   - Check for resource conflicts
-   - Use process mode for CPU-intensive tests
-
-3. **File Comparison Issues**
-   - Verify file permissions
-   - Check file encoding
-   - Ensure sufficient memory for large files
-
-### Debug Mode
 ```python
-runner = JSONRunner(
-    config_file="test_cases.json",
-    debug=True
-)
+from cli_test_framework.assertions import BaseAssertion
+
+class CustomAssertion(BaseAssertion):
+    def assert_custom_condition(self, actual, expected):
+        if not self._check(actual, expected):
+            raise AssertionError("Condition not met")
 ```
-
-## API Reference
-
-### Core Classes
-
-#### JSONRunner
-```python
-class JSONRunner:
-    def __init__(self, config_file, workspace=None, test_case_filter=None):
-        """
-        Initialize JSONRunner
-        :param config_file: Path to JSON test case file
-        :param workspace: Working directory for test execution
-        :param test_case_filter: Optional list of test case names to run (runs all if None)
-        """
-```
-
-#### YAMLRunner
-```python
-class YAMLRunner:
-    def __init__(self, config_file, workspace=None, test_case_filter=None):
-        """
-        Initialize YAMLRunner
-        :param config_file: Path to YAML test case file
-        :param workspace: Working directory for test execution
-        :param test_case_filter: Optional list of test case names to run (runs all if None)
-        """
-```
-
-#### ParallelJSONRunner
-```python
-class ParallelJSONRunner:
-    def __init__(self, config_file, max_workers=None, execution_mode="thread", test_case_filter=None):
-        """
-        Initialize ParallelJSONRunner
-        :param config_file: Path to JSON test case file
-        :param max_workers: Maximum number of parallel workers
-        :param execution_mode: "thread" or "process"
-        :param test_case_filter: Optional list of test case names to run (runs all if None)
-        """
-```
-
-### File Comparison
-
-#### ComparatorFactory
-```python
-class ComparatorFactory:
-    @staticmethod
-    def create_comparator(file_type, **kwargs):
-        """
-        Create a comparator instance
-        :param file_type: Type of file to compare
-        :param kwargs: Additional comparator options
-        :return: Comparator instance
-        """
-```
-
-## Examples
-
-### Complete Test Suite
-```python
-from cli_test_framework.runners import JSONRunner
-from cli_test_framework.assertions import Assertions
-
-# Create test runner
-runner = JSONRunner(
-    config_file="test_suite.json",
-    workspace="/project/root",
-    debug=True
-)
-
-# Run tests
-success = runner.run_tests()
-
-# Process results
-if success:
-    print("All tests passed!")
-else:
-    print("Some tests failed:")
-    for result in runner.results["details"]:
-        if result["status"] == "failed":
-            print(f"- {result['name']}: {result['message']}")
-```
-
-### Parallel Test Suite
-```python
-from cli_test_framework.runners import ParallelJSONRunner
-import os
-
-# Create parallel runner
-runner = ParallelJSONRunner(
-    config_file="test_suite.json",
-    max_workers=os.cpu_count() * 2,
-    execution_mode="thread"
-)
-
-# Run tests in parallel
-success = runner.run_tests()
-
-# Generate report
-runner.generate_report("test_report.html")
-```
-
-### File Comparison Suite
-```python
-from cli_test_framework.file_comparator import ComparatorFactory
-
-# Compare text files
-text_comparator = ComparatorFactory.create_comparator(
-    "text",
-    encoding="utf-8",
-    verbose=True
-)
-text_result = text_comparator.compare_files("file1.txt", "file2.txt")
-
-# Compare JSON files
-json_comparator = ComparatorFactory.create_comparator(
-    "json",
-    compare_mode="key-based",
-    key_field="id"
-)
-json_result = json_comparator.compare_files("data1.json", "data2.json")
-```
-
-## Contributing
-
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 

@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -104,6 +105,39 @@ class TestParallelRunner(unittest.TestCase):
         success = runner.run_tests_sequential()
         self.assertTrue(success)
         self.assertEqual(runner.results["passed"], 4)
+
+    def test_parallel_reports_real_failures(self):
+        config_file = os.path.join(self.temp_dir, "failure_config.json")
+        test_config = {
+            "test_cases": [
+                {
+                    "name": "pass",
+                    "command": f'"{sys.executable}" -c "print(\'ok\')"',
+                    "args": [],
+                    "expected": {"return_code": 0, "output_contains": ["ok"]},
+                },
+                {
+                    "name": "fail",
+                    "command": f'"{sys.executable}" -c "import sys; sys.exit(5)"',
+                    "args": [],
+                    "expected": {"return_code": 0},
+                },
+            ]
+        }
+        with open(config_file, "w", encoding="utf-8") as f:
+            json.dump(test_config, f, ensure_ascii=False, indent=2)
+
+        runner = ParallelJSONRunner(
+            config_file, self.temp_dir, max_workers=2, execution_mode="thread"
+        )
+
+        success = runner.run_tests()
+
+        self.assertFalse(success)
+        self.assertEqual(runner.results["passed"], 1)
+        self.assertEqual(runner.results["failed"], 1)
+        failed = [d for d in runner.results["details"] if d["status"] != "passed"]
+        self.assertEqual(failed[0]["return_code"], 5)
 
 
 if __name__ == "__main__":

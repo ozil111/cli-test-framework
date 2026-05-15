@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -5,10 +6,13 @@ from .test_case import TestCase
 from .assertions import Assertions
 from .setup import SetupManager, EnvironmentSetup
 from .execution import execute_single_test_case
+from .history_store import load_history, update_case, check_regression, save_history
 
 class BaseRunner(ABC):
     def __init__(self, config_file: str, workspace: Optional[str] = None,
-                 test_case_filter: Optional[List[str]] = None):
+                 test_case_filter: Optional[List[str]] = None,
+                 history_dir: Optional[str] = None,
+                 regression_threshold: float = 1.5):
         if workspace:
             self.workspace = Path(workspace)
         else:
@@ -16,6 +20,11 @@ class BaseRunner(ABC):
         self.config_path = self.workspace / config_file
         self.test_cases: List[TestCase] = []
         self.test_case_filter: Optional[List[str]] = test_case_filter
+        if history_dir:
+            self.history_dir = str((self.workspace / history_dir).resolve())
+        else:
+            self.history_dir = None
+        self.regression_threshold = regression_threshold
         self.results: Dict[str, Any] = {
             "total": 0,
             "passed": 0,
@@ -71,6 +80,8 @@ class BaseRunner(ABC):
             # 执行setup任务
             self.setup_manager.setup_all()
             
+            total_start_time = time.time()
+            
             print(f"\nStarting test execution... Total tests: {self.results['total']}")
             print("=" * 50)
             
@@ -78,21 +89,41 @@ class BaseRunner(ABC):
                 print(f"\nRunning test {i}/{self.results['total']}: {case.name}")
                 result = self.run_single_test(case)
                 self.results["details"].append(result)
+                duration = result.get("duration", 0)
                 if result["status"] == "passed":
                     self.results["passed"] += 1
-                    print(f"✓ Test passed: {case.name}")
+                    print(f"✓ Test passed: {case.name} ({duration:.2f}s)")
                 else:
                     self.results["failed"] += 1
-                    print(f"✗ Test failed: {case.name}")
+                    print(f"✗ Test failed: {case.name} ({duration:.2f}s)")
                     if result["message"]:
                         print(f"  Error: {result['message']}")
                     
+            total_duration = time.time() - total_start_time
             print("\n" + "=" * 50)
-            print(f"Test execution completed. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
+            print(f"Test execution completed in {total_duration:.2f}s. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
+
+            # Update history & regression detection
+            self._update_history()
+
             return self.results["failed"] == 0
         finally:
             # 确保teardown总是被执行
             self.setup_manager.teardown_all()
+
+    def _update_history(self) -> None:
+        """Update .symtest history with current run results and check for regressions."""
+        if not self.history_dir:
+            return
+        history = load_history(self.history_dir)
+        for result in self.results["details"]:
+            duration = result.get("duration", 0)
+            # Check regression BEFORE updating (compare against old avg)
+            warning = check_regression(history, result["name"], duration, self.regression_threshold)
+            if warning:
+                print(warning)
+            update_case(history, result["name"], duration)
+        save_history(self.history_dir, history)
 
     def _run_sequence(self, case: TestCase) -> Dict[str, Any]:
         """Run a sequence test case with multiple steps (fail-fast)."""

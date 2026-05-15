@@ -7,12 +7,15 @@ class ReportGenerator:
         report = "Test Results Summary:\n"
         report += f"Total Tests: {self.results['total']}\n"
         report += f"Passed: {self.results['passed']}\n"
-        report += f"Failed: {self.results['failed']}\n\n"
+        report += f"Failed: {self.results['failed']}\n"
+        total_duration = sum(d.get('duration', 0) for d in self.results['details'])
+        report += f"Total Duration: {total_duration:.2f}s\n\n"
         
         report += "Detailed Results:\n"
         for detail in self.results['details']:
             status_icon = "✓" if detail['status'] == 'passed' else "✗"
-            report += f"{status_icon} {detail['name']}\n"
+            duration = detail.get('duration', 0)
+            report += f"{status_icon} {detail['name']} ({duration:.2f}s)\n"
             if detail.get('message'):
                 report += f"   -> {detail['message']}\n"
         
@@ -52,7 +55,7 @@ class ReportGenerator:
                 
                 # 添加执行时间（如果有的话）
                 if failed_test.get('duration'):
-                    report += f"Duration: {failed_test['duration']}s\n"
+                    report += f"Duration: {failed_test['duration']:.2f}s\n"
                 
                 report += "\n"
         

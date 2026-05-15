@@ -1,10 +1,17 @@
 import subprocess
 import time
 import os
+import shlex
 from typing import Optional, Dict
 
 from .assertions import Assertions
 from .types import ExpectedResult, TestCaseData, TestResultData
+
+
+def _quote_shell_arg(arg: str) -> str:
+    if os.name == "nt":
+        return subprocess.list2cmdline([arg])
+    return shlex.quote(arg)
 
 
 def validate_result(expected: ExpectedResult, actual: TestResultData) -> None:
@@ -34,7 +41,8 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         env: Optional environment variables to inject/override (merged with os.environ)
     """
     start_time = time.time()
-    full_command = f"{case['command']} {' '.join(case['args'])}".strip()
+    quoted_args = [_quote_shell_arg(str(arg)) for arg in case["args"]]
+    full_command = f"{case['command']} {' '.join(quoted_args)}".strip()
     timeout_limit = case.get("timeout", 3600)
 
     result: TestResultData = {

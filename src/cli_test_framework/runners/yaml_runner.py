@@ -8,8 +8,10 @@ import sys
 
 class YAMLRunner(BaseRunner):
     def __init__(self, config_file="test_cases.yaml", workspace: Optional[str] = None,
-                 test_case_filter: Optional[list] = None):
-        super().__init__(config_file, workspace, test_case_filter)
+                 test_case_filter: Optional[list] = None,
+                 history_dir: Optional[str] = None,
+                 regression_threshold: float = 1.5):
+        super().__init__(config_file, workspace, test_case_filter, history_dir, regression_threshold)
         # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
 
