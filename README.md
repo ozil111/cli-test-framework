@@ -75,6 +75,13 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 
 ## Changelog
 
+### 0.5.2
+
+- Runtime history tracking (`--history-dir`): persist per-case execution time in `.symtest`, enable smart scheduling & regression detection
+- Regression warning: alert when a case runs slower than historical average × threshold (`--regression-threshold`, default 1.5)
+- Smart scheduling: parallel runner prioritizes historical `avg_duration` over config `estimated_time` for task ordering
+- Per-case duration now shown in test result output
+
 ### 0.5.1
 - Run specific test cases by name (`-t` / `test_case_filter`)
 

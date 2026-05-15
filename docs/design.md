@@ -24,6 +24,7 @@
 │                   Core 层                        │
 │  TestCase │ Assertions │ Setup │ PathResolver    │
 │  Execution│ Types      │Manager│ ReportGenerator │
+│  HistoryStore                                  │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -45,6 +46,7 @@ src/cli_test_framework/
 │   ├── assertions.py            # 断言引擎
 │   ├── setup.py                 # Setup 插件体系
 │   ├── test_case.py             # TestCase 数据类
+│   ├── history_store.py         # .symtest 历史记录存储
 │   └── types.py                 # TypedDict 类型定义
 ├── runners/                     # 具体运行器
 │   ├── json_runner.py           # JSONRunner
@@ -93,7 +95,9 @@ BaseRunner (ABC)
 ```python
 class BaseRunner(ABC):
     def __init__(self, config_file: str, workspace: Optional[str] = None,
-                 test_case_filter: Optional[List[str]] = None)
+                 test_case_filter: Optional[List[str]] = None,
+                 history_dir: Optional[str] = None,
+                 regression_threshold: float = 1.5)
 ```
 
 **模板方法 `run_tests()`**：
@@ -113,6 +117,8 @@ load_test_cases() → _apply_test_case_filter() → setup_manager.setup_all()
 | `results` | `Dict` | 运行结果 `{total_tests, passed, failed, details}` |
 | `assertions` | `Assertions` | 断言引擎实例 |
 | `setup_manager` | `SetupManager` | Setup 管理器 |
+| `history_dir` | `Optional[str]` | `.symtest` 历史记录目录，`None` 时禁用 |
+| `regression_threshold` | `float` | 回归检测阈值倍数，默认 1.5 |
 
 **抽象方法**：
 
@@ -133,7 +139,8 @@ load_test_cases() → _apply_test_case_filter() → setup_manager.setup_all()
 class ParallelRunner(BaseRunner):
     def __init__(self, config_file, workspace=None,
                  max_workers=None, execution_mode="thread",
-                 test_case_filter=None)
+                 test_case_filter=None,
+                 history_dir=None, regression_threshold=1.5)
 ```
 
 - 线程模式：`ThreadPoolExecutor`，共享内存，支持资源调度
@@ -145,7 +152,7 @@ class ParallelRunner(BaseRunner):
 
 在 ParallelRunner 基础上增加**资源感知调度**：
 
-1. 加载用例后按 `estimated_time` 降序排序（LPT 策略）
+1. 加载用例后按 `estimated_time` 降序排序（LPT 策略）；若启用 `history_dir`，优先使用 `.symtest` 中的历史 `avg_duration` 排序
 2. 创建 `Semaphore(safe_capacity)` 资源池，`safe_capacity = max(1, cpu_count - 2)`
 3. 每个 case 执行前 acquire `cpu_cores` 个信号量，执行后 release
 4. 自动注入 `OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`NPROC` 环境变量
@@ -232,7 +239,40 @@ class PathResolver:
 3. Assertions 逐项校验
 4. 返回结果字典
 
-### 3.7 ReportGenerator
+### 3.7 HistoryStore
+
+`.symtest` 历史记录存储模块，用于持久化每个 case 的运行时间，支持智能调度和回归检测。
+
+```python
+# .symtest 文件格式 (JSON):
+# {
+#   "version": 1,
+#   "cases": {
+#     "case_name": {
+#       "avg_duration": 3.5,    # 累计平均耗时
+#       "last_duration": 3.2,   # 最近一次耗时
+#       "run_count": 5           # 运行次数
+#     }
+#   }
+# }
+```
+
+核心接口：
+
+| 函数 | 说明 |
+|---|---|
+| `ensure_symtest(history_dir)` | 如果目录下没有 `.symtest` 就创建（含空结构） |
+| `load_history(history_dir)` | 读取 `.symtest`，不存在则自动初始化并返回空结构 |
+| `save_history(history_dir, history)` | 写回 `.symtest` |
+| `update_case(history, name, duration)` | 用累计平均更新单条记录：`avg = (旧均值×次数 + 新耗时) / (次数+1)` |
+| `check_regression(history, name, duration, threshold)` | 如果 `duration > avg * threshold`，返回 warning 消息；否则返回 `None` |
+
+与 Runner 的集成：
+- `BaseRunner._update_history()`：在 `run_tests()` 末尾调用，遍历 `results["details"]`，先检测回归再更新历史
+- `ParallelJSONRunner.load_test_cases()`：排序时优先使用历史 `avg_duration`，fallback 到配置中的 `estimated_time`
+- 所有 Runner（JSON/YAML/Parallel）均支持 `history_dir` 和 `regression_threshold` 参数
+
+### 3.8 ReportGenerator
 
 ```python
 class ReportGenerator:
@@ -322,6 +362,9 @@ HDF5 比较器是框架中实现最复杂的比较器，针对科学计算场景
   setup_manager.setup_all()  # 环境变量 + 自定义插件
        │
        ▼
+  [如果 history_dir] load .symtest → 读取历史 avg_duration（用于调度排序）
+       │
+       ▼
   ┌─────────────────────────────┐
   │  for each TestCase:         │
   │    PathResolver 解析命令     │
@@ -334,6 +377,11 @@ HDF5 比较器是框架中实现最复杂的比较器，针对科学计算场景
   setup_manager.teardown_all() # 逆序清理
        │
        ▼
+  [如果 history_dir] _update_history()
+      → check_regression() → 打印 warning（如果慢太多）
+      → update_case() → save_history()
+       │
+       ▼
   ReportGenerator.generate()   # text / json / html
 ```
 
@@ -343,7 +391,7 @@ HDF5 比较器是框架中实现最复杂的比较器，针对科学计算场景
 ParallelJSONRunner.run_tests()
        │
        ▼
-  LPT 排序 (estimated_time 降序)
+  LPT 排序 (历史 avg_duration 优先，fallback 到 estimated_time 降序)
        │
        ▼
   ┌──────────────────────────────────────┐
@@ -395,7 +443,10 @@ compare-files file1 file2 [options]
 | Runner 用模板方法模式 | 统一执行流程（load → filter → setup → run → teardown），子类只需实现配置解析和单测试执行 |
 | Setup 逆序 teardown | 类似栈语义，后初始化的依赖先清理 |
 | 信号量管理 CPU 核心 | 比线程池 worker 数更精细，允许不同 case 声明不同核心需求 |
-| LPT 调度策略 | 长任务先启动，减少尾延迟，提升整体吞吐 |
+| LPT 调度策略 | 长任务先启动，减少尾延迟，提升整体吞吐；优先使用 `.symtest` 历史数据，比手写 `estimated_time` 更准确 |
+| 累计平均更新历史 | 直觉简单，随运行次数增多单次异常自然稀释，无需手动配置衰减因子 |
+| 回归检测在更新前执行 | 先与旧均值比较再更新，确保对比的是"历史基线"而非"已包含本次的均值" |
+| `.symtest` 隐藏文件 | 不干扰用户目录视图，同时使用 JSON 格式便于调试时直接查看 |
 | 环境变量注入 | 科学计算求解器常忽略 Python 级线程控制，需通过 `OMP_NUM_THREADS` 等底层变量约束 |
 | Comparator 工厂模式 | 按文件类型创建比较器，CLI 和 Python API 共用 |
 | subprocess 隔离执行 | 每个 test case 独立子进程，保证测试间互不影响 |

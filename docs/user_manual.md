@@ -9,6 +9,7 @@
 - [并行测试](#并行测试)
 - [顺序步骤测试](#顺序步骤测试)
 - [资源感知调度](#资源感知调度)
+- [历史记录与回归检测](#历史记录与回归检测)
 - [文件比较](#文件比较)
 - [扩展开发](#扩展开发)
 
@@ -119,6 +120,12 @@ cli-test run test_cases.json --debug
 
 # 输出格式
 cli-test run test_cases.json --output-format json|html|text
+
+# 启用历史记录（智能调度 + 回归检测）
+cli-test run test_cases.json --history-dir ./hist
+
+# 自定义回归检测阈值（默认 1.5 倍）
+cli-test run test_cases.json --history-dir ./hist --regression-threshold 2.0
 ```
 
 ### Python API
@@ -130,7 +137,9 @@ from cli_test_framework.runners import JSONRunner, YAMLRunner, ParallelJSONRunne
 runner = JSONRunner(
     config_file="test_cases.json",
     workspace="/path/to/project",    # 可选，默认项目根目录
-    test_case_filter=["test_1"]      # 可选，只运行指定用例
+    test_case_filter=["test_1"],     # 可选，只运行指定用例
+    history_dir="./hist",            # 可选，启用历史记录与回归检测
+    regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
 )
 success = runner.run_tests()
 
@@ -142,7 +151,9 @@ runner = ParallelJSONRunner(
     config_file="test_cases.json",
     max_workers=4,                   # 可选，默认 CPU 核心数
     execution_mode="thread",         # "thread" 或 "process"
-    test_case_filter=["test_1"]
+    test_case_filter=["test_1"],
+    history_dir="./hist",            # 可选，启用历史记录与智能调度
+    regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
 )
 success = runner.run_tests()
 ```
@@ -318,9 +329,81 @@ test_cases:
 框架行为：
 - 自动检测 CPU 核心数，预留 2 核给系统
 - 任务启动时自动注入 `OMP_NUM_THREADS`、`MKL_NUM_THREADS`、`NPROC` 环境变量，防止求解器线程失控
-- 按 `estimated_time` 降序调度（LPT 策略）
+- 按 `estimated_time` 降序调度（LPT 策略）；若启用 `--history-dir`，优先使用历史 `avg_duration` 排序
 
-## 文件比较
+## 历史记录与回归检测
+
+通过 `--history-dir` 指定一个目录，框架会在该目录下维护一个 `.symtest` 文件，记录每个 case 的历史运行时间。
+
+### 工作原理
+
+1. **首次运行**：目录下没有 `.symtest`，自动创建空文件，排序仍使用配置中的 `estimated_time`
+2. **后续运行**：读取 `.symtest` 中的历史数据，优先使用 `avg_duration` 做调度排序
+3. **回归检测**：每次运行结束后，如果某 case 耗时超过历史均值的阈值倍数（默认 1.5），打印警告
+
+### CLI 用法
+
+```bash
+# 启用历史记录
+cli-test run test_cases.json --history-dir ./hist
+
+# 自定义回归阈值（超过 2 倍均值才警告）
+cli-test run test_cases.json --history-dir ./hist --regression-threshold 2.0
+```
+
+### Python API
+
+```python
+from cli_test_framework.runners import JSONRunner, ParallelJSONRunner
+
+# 顺序运行 + 历史记录
+runner = JSONRunner(
+    config_file="test_cases.json",
+    history_dir="./hist",
+    regression_threshold=2.0,  # 可选，默认 1.5
+)
+success = runner.run_tests()
+
+# 并行运行 + 历史记录（调度排序也会使用历史数据）
+runner = ParallelJSONRunner(
+    config_file="test_cases.json",
+    history_dir="./hist",
+)
+success = runner.run_tests()
+```
+
+### .symtest 文件格式
+
+```json
+{
+  "version": 1,
+  "cases": {
+    "case_name_1": {
+      "avg_duration": 3.5,
+      "last_duration": 3.2,
+      "run_count": 5
+    }
+  }
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `avg_duration` | 累计平均耗时（秒），用于调度排序和回归基线 |
+| `last_duration` | 最近一次运行耗时 |
+| `run_count` | 历史运行次数 |
+
+### 回归警告示例
+
+当某 case 运行时间超过历史均值的阈值倍数时：
+
+```
+⚠ WARNING: Case 'heavy_simulation' regressed: 18.2s vs avg 10.5s (1.73x slower)
+```
+
+### 不启用历史记录
+
+不传 `--history-dir` 时行为与之前完全一致，不创建任何额外文件。
 
 ### 命令行工具 `compare-files`
 

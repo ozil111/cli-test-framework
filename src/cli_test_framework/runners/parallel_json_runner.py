@@ -14,7 +14,9 @@ class ParallelJSONRunner(ParallelRunner):
     
     def __init__(self, config_file="test_cases.json", workspace: Optional[str] = None,
                  max_workers: Optional[int] = None, execution_mode: str = "thread",
-                 test_case_filter: Optional[list] = None):
+                 test_case_filter: Optional[list] = None,
+                 history_dir: Optional[str] = None,
+                 regression_threshold: float = 1.5):
         """
         初始化并行JSON运行器
         
@@ -24,6 +26,8 @@ class ParallelJSONRunner(ParallelRunner):
             max_workers: 最大并发数
             execution_mode: 执行模式，'thread' 或 'process'
             test_case_filter: 只运行指定名称的测试用例
+            history_dir: .symtest 历史记录目录
+            regression_threshold: 回归检测阈值
         """
         # 1. 自动感知：获取物理核心数
         # 如果获取失败默认为 4，留 2 个核给系统/Python (防止 GUI 卡死)
@@ -36,7 +40,8 @@ class ParallelJSONRunner(ParallelRunner):
         if max_workers is None:
             max_workers = self.total_physical
             
-        super().__init__(config_file, workspace, max_workers, execution_mode, test_case_filter)
+        super().__init__(config_file, workspace, max_workers, execution_mode, test_case_filter,
+                         history_dir, regression_threshold)
         # Backward-compatible attribute for potential external patches/tests
         self.path_resolver = PathResolver(self.workspace)
         self._print_lock = threading.Lock()  # 用于控制输出顺序
@@ -126,14 +131,25 @@ class ParallelJSONRunner(ParallelRunner):
 
             # Heuristic scheduling: longest estimated time first to improve parallel utilization.
             if self.test_cases:
+                # Load history for smart scheduling if available
+                history_cases = {}
+                if self.history_dir:
+                    from ..core.history_store import load_history
+                    hist = load_history(self.history_dir)
+                    history_cases = hist.get("cases", {})
+
+                def get_estimated_time(case):
+                    """Prefer history avg_duration > config estimated_time > 0"""
+                    if case.name in history_cases:
+                        return history_cases[case.name]["avg_duration"]
+                    return (case.resources or {}).get("estimated_time", 0)
+
                 print("Optimizing execution order based on estimated duration...")
-                self.test_cases.sort(
-                    key=lambda c: (c.resources or {}).get("estimated_time", 0),
-                    reverse=True,
-                )
+                self.test_cases.sort(key=get_estimated_time, reverse=True)
                 top_case = self.test_cases[0]
-                top_est = (top_case.resources or {}).get("estimated_time", 0)
-                print(f"Heaviest task: {top_case.name} (Est: {top_est}s)")
+                top_est = get_estimated_time(top_case)
+                source = "history" if top_case.name in history_cases else "config"
+                print(f"Heaviest task: {top_case.name} (Est: {top_est:.2f}s, source: {source})")
 
             # Relative CPU allocation for cases without explicit cpu_cores
             self._assign_relative_cpu_cores()

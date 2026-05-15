@@ -20,6 +20,7 @@ src/cli_test_framework/core/__init__.py
 src/cli_test_framework/core/assertions.py
 src/cli_test_framework/core/base_runner.py
 src/cli_test_framework/core/execution.py
+src/cli_test_framework/core/history_store.py
 src/cli_test_framework/core/parallel_runner.py
 src/cli_test_framework/core/process_worker.py
 src/cli_test_framework/core/setup.py
@@ -71,8 +72,10 @@ tests/fixtures/test_cases.yaml
 tests/fixtures/test_cases1.json
 tests/fixtures/test_with_setup.json
 tests/fixtures/test_with_setup.yaml
+tests/integration/test_history_feature.py
 tests/integration/test_real_command_execution.py
 tests/integration/test_sequence.py
+tests/integration/__pycache__/test_history_feature.cpython-312-pytest-9.0.3.pyc
 tests/integration/__pycache__/test_real_command_execution.cpython-312-pytest-9.0.3.pyc
 tests/integration/__pycache__/test_sequence.cpython-312-pytest-7.4.4.pyc
 tests/integration/__pycache__/test_sequence.cpython-312-pytest-9.0.3.pyc
@@ -112,8 +115,10 @@ tests/unit/__pycache__/test_h5_comparator.cpython-312-pytest-9.0.3.pyc
 tests/unit/__pycache__/test_run_all.cpython-312-pytest-9.0.3.pyc
 tests/unit/commands/test_compare_command.py
 tests/unit/commands/__pycache__/test_compare_command.cpython-312-pytest-9.0.3.pyc
+tests/unit/core/test_history_store.py
 tests/unit/core/test_process_worker.py
 tests/unit/core/test_setup.py
+tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_process_worker.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_setup.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_setup.cpython-312-pytest-9.0.3.pyc
