@@ -77,6 +77,11 @@ class ComparatorFactory:
             json_kwargs = {k: v for k, v in kwargs.items()
                          if k in ['encoding', 'chunk_size', 'verbose', 'compare_mode', 'key_field']}
             return comparator_class(**json_kwargs)
+        elif file_type.lower() == 'csv':
+            # CSV comparator accepts specific parameters
+            csv_kwargs = {k: v for k, v in kwargs.items()
+                         if k in ['encoding', 'delimiter', 'quotechar', 'chunk_size', 'verbose', 'rtol', 'atol']}
+            return comparator_class(**csv_kwargs)
         else:
             # Other comparators only accept basic parameters
             basic_kwargs = {k: v for k, v in kwargs.items()
