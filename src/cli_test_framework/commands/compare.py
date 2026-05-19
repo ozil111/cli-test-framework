@@ -49,6 +49,17 @@ def parse_arguments():
                         help="When comparing binary files, compute and show similarity index")
     parser.add_argument("--num-threads", type=int, default=4, help="Number of threads for parallel processing")
     
+    # CSV comparison options
+    csv_group = parser.add_argument_group('CSV comparison options')
+    csv_group.add_argument("--csv-rtol", type=float, default=1e-5,
+                         help="Relative tolerance for numerical comparison in CSV files")
+    csv_group.add_argument("--csv-atol", type=float, default=1e-8,
+                         help="Absolute tolerance for numerical comparison in CSV files")
+    csv_group.add_argument("--csv-delimiter", default=",",
+                         help="CSV field delimiter (default: comma)")
+    csv_group.add_argument("--csv-quotechar", default='"',
+                         help="Character used for quoting fields in CSV (default: double quote)")
+
     # JSON comparison options
     json_group = parser.add_argument_group('JSON comparison options')
     json_group.add_argument("--json-compare-mode", choices=["exact", "key-based"], default="exact",
@@ -148,6 +159,12 @@ def main():
                 key_fields = [field.strip() for field in args.json_key_field.split(',')]
                 comparator_kwargs["key_field"] = key_fields[0] if len(key_fields) == 1 else key_fields
         
+        if file_type == "csv":
+            comparator_kwargs["rtol"] = args.csv_rtol
+            comparator_kwargs["atol"] = args.csv_atol
+            comparator_kwargs["delimiter"] = args.csv_delimiter
+            comparator_kwargs["quotechar"] = args.csv_quotechar
+
         if file_type == "h5":
             if args.h5_table:
                 tables = [table.strip() for table in args.h5_table.split(',')]

@@ -10,6 +10,7 @@
 
 import csv
 import io
+import math
 from .text_comparator import TextComparator
 from .result import Difference
 
@@ -24,7 +25,7 @@ class CsvComparator(TextComparator):
              - Configurable delimiter and quote character
     """
     
-    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False):
+    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False, rtol=1e-5, atol=1e-8):
         """
         @brief Initialize CSV comparator with configuration
         @param encoding str: File encoding (default: utf-8)
@@ -32,10 +33,14 @@ class CsvComparator(TextComparator):
         @param quotechar str: Character used for quoting fields (default: double quote)
         @param chunk_size int: Size of chunks for reading large files
         @param verbose bool: Enable verbose output
+        @param rtol float: Relative tolerance for numerical comparison (default: 1e-5)
+        @param atol float: Absolute tolerance for numerical comparison (default: 1e-8)
         """
         super().__init__(encoding, chunk_size, verbose)
         self.delimiter = delimiter
         self.quotechar = quotechar
+        self.rtol = rtol
+        self.atol = atol
     
     def read_content(self, file_path, start_line=0, end_line=None, start_column=0, end_column=None):
         """
@@ -116,6 +121,14 @@ class CsvComparator(TextComparator):
             # Compare column values
             for j, (cell1, cell2) in enumerate(zip(row1, row2)):
                 if cell1 != cell2:
+                    # Try numeric tolerance comparison
+                    try:
+                        num1 = float(cell1)
+                        num2 = float(cell2)
+                        if math.isclose(num1, num2, rel_tol=self.rtol, abs_tol=self.atol):
+                            continue  # Within tolerance, treat as equal
+                    except (ValueError, TypeError):
+                        pass  # Non-numeric, fall through to string mismatch
                     differences.append(Difference(
                         position=f"row {i+1}, column {j+1}",
                         expected=cell1,
@@ -137,4 +150,6 @@ class CsvComparator(TextComparator):
                 diff_type=f"more differences not shown"
             ))
         
+        if not differences:
+            return True, []
         return False, differences
