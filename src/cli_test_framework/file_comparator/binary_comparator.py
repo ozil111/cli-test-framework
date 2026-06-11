@@ -8,10 +8,10 @@
 @date 2025
 """
 
+import difflib
 import hashlib
 from .base_comparator import BaseComparator
 from .result import Difference
-from concurrent.futures import ThreadPoolExecutor
 
 class BinaryComparator(BaseComparator):
     """
@@ -144,41 +144,61 @@ class BinaryComparator(BaseComparator):
         
         return identical, differences
 
-    def compute_lcs_length(self, a: bytes, b: bytes) -> int:
+    def _compute_similarity(self, a: bytes, b: bytes) -> float:
         """
-        @brief Compute the length of the longest common subsequence
+        @brief Compute similarity ratio between two binary sequences.
         @param a bytes: First binary sequence
         @param b bytes: Second binary sequence
-        @return int: Length of the longest common subsequence
-        @details Uses dynamic programming with memory optimization to compute LCS.
-                 Supports parallel processing for large sequences.
+        @return float: Similarity ratio in [0.0, 1.0]
+        @details Uses difflib.SequenceMatcher for accurate comparison on small/medium
+                 files, and hash-based chunk comparison for large files to avoid
+                 O(n*m) complexity that would be infeasible on large binaries.
         """
-        if not a or not b:
-            return 0
+        if not a and not b:
+            return 1.0
 
-        def lcs_worker(start, end):
-            previous = [0] * (len(b) + 1)
-            for i in range(start, end):
-                current = [0] * (len(b) + 1)
-                for j in range(1, len(b) + 1):
-                    if a[i - 1] == b[j - 1]:
-                        current[j] = previous[j - 1] + 1
-                    else:
-                        current[j] = max(previous[j], current[j - 1])
-                previous = current
-            return previous[len(b)]
+        total_bytes = len(a) + len(b)
+        if total_bytes == 0:
+            return 1.0
 
-        chunk_size = len(a) // self.num_threads
-        futures = []
+        # difflib.SequenceMatcher uses a heuristic matching algorithm that works well
+        # for files under ~1 MB. Beyond that, fall back to chunk-hash approximation.
+        if total_bytes <= 1024 * 1024:
+            matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+            return matcher.ratio()
 
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            for i in range(self.num_threads):
-                start = i * chunk_size
-                end = (i + 1) * chunk_size if i != self.num_threads - 1 else len(a)
-                futures.append(executor.submit(lcs_worker, start, end))
+        return self._hash_chunk_similarity(a, b)
 
-        lcs_length = sum(f.result() for f in futures)
-        return lcs_length
+    def _hash_chunk_similarity(self, a: bytes, b: bytes) -> float:
+        """
+        @brief Approximate similarity via chunk-level hash matching for large files.
+        @param a bytes: First binary sequence
+        @param b bytes: Second binary sequence
+        @return float: Approximate similarity ratio in [0.0, 1.0]
+        @details Splits both inputs into fixed-size chunks (4 KB), hashes each chunk,
+                 and computes Jaccard similarity on the chunk hash sets. This avoids
+                 O(n*m) DP while giving a reasonable estimate of binary similarity.
+        """
+        chunk_size = 4096
+
+        hashes_a = set()
+        for i in range(0, len(a), chunk_size):
+            hashes_a.add(hash(a[i:i + chunk_size]))
+
+        hashes_b = set()
+        for i in range(0, len(b), chunk_size):
+            hashes_b.add(hash(b[i:i + chunk_size]))
+
+        if not hashes_a and not hashes_b:
+            return 1.0
+
+        intersection = len(hashes_a & hashes_b)
+        union = len(hashes_a | hashes_b)
+
+        if union == 0:
+            return 1.0
+
+        return intersection / union
 
     def compare_files(self, file1, file2, start_line=0, end_line=None, start_column=0, end_column=None):
         """
@@ -233,18 +253,13 @@ class BinaryComparator(BaseComparator):
             # If similarity calculation is needed, we still need to read full content
             # but for regular comparison, use chunk-based streaming
             if self.similarity:
-                # For similarity calculation, we still need full content
-                # This is a limitation of the current LCS algorithm
+                # Similarity calculation requires full content for SequenceMatcher
+                # or chunk-hash comparison
                 self.logger.debug("Reading full content for similarity calculation")
                 content1 = self.read_content(file1, start_line, end_line, start_column, end_column)
                 content2 = self.read_content(file2, start_line, end_line, start_column, end_column)
                 identical, differences = self.compare_content(content1, content2)
-                if (len(content1) + len(content2)) > 0:
-                    lcs_len = self.compute_lcs_length(content1, content2)
-                    similarity = 2 * lcs_len / (len(content1) + len(content2))
-                else:
-                    similarity = 1
-                result.similarity = similarity
+                result.similarity = self._compute_similarity(content1, content2)
             else:
                 # Chunk-based streaming comparison for O(1) memory usage
                 self.logger.debug("Using chunk-based streaming comparison")
