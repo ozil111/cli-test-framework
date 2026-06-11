@@ -8,11 +8,13 @@ This module provides the main command-line interface for the CLI Testing Framewo
 """
 
 import argparse
+import json
 import sys
 import os
 from pathlib import Path
 
-from .runners import JSONRunner, ParallelJSONRunner, YAMLRunner
+from .runners import JSONRunner, ParallelJSONRunner, ParallelYAMLRunner, YAMLRunner
+from .utils.report_generator import ReportGenerator
 
 
 def create_parser():
@@ -25,12 +27,14 @@ Examples:
   cli-test run test_cases.json
   cli-test run test_cases.json --parallel --workers 4
   cli-test run test_cases.yaml --workspace /path/to/project
+  cli-test compare file1.json file2.json
+  cli-test compare file1.txt file2.txt --output-format json
         """
     )
-    
+
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
-    
-    # Run command
+
+    # ---- Run command ----
     run_parser = subparsers.add_parser('run', help='Run test cases from a configuration file')
     run_parser.add_argument('config_file', help='Path to the test configuration file (JSON or YAML)')
     run_parser.add_argument('--workspace', '-w', help='Working directory for test execution')
@@ -48,38 +52,105 @@ Examples:
                            help='Warn if a case runs N times slower than historical average (default: 1.5)')
     run_parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    
+
+    # ---- Compare command ----
+    compare_parser = subparsers.add_parser('compare', help='Compare two files')
+    compare_parser.add_argument('file1', help='Path to the first file')
+    compare_parser.add_argument('file2', help='Path to the second file')
+    compare_parser.add_argument('--start-line', type=int, default=1, help='Starting line number (1-based)')
+    compare_parser.add_argument('--end-line', type=int, help='Ending line number (1-based)')
+    compare_parser.add_argument('--start-column', type=int, default=1, help='Starting column number (1-based)')
+    compare_parser.add_argument('--end-column', type=int, help='Ending column number (1-based)')
+    compare_parser.add_argument('--file-type', help='Type of the files to compare', default='auto')
+    compare_parser.add_argument('--encoding', default='utf-8', help='File encoding for text files')
+    compare_parser.add_argument('--chunk-size', type=int, default=8192, help='Chunk size for binary comparison')
+    compare_parser.add_argument('--output-format', choices=['text', 'json', 'html'], default='text',
+                               help='Output format for the comparison result')
+    compare_parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
+    compare_parser.add_argument('--debug', action='store_true', help='Enable debug mode with detailed logging')
+    compare_parser.add_argument('--similarity', action='store_true',
+                               help='When comparing binary files, compute and show similarity index')
+    compare_parser.add_argument('--num-threads', type=int, default=4, help='Number of threads for parallel processing')
+
+    # CSV comparison options
+    csv_group = compare_parser.add_argument_group('CSV comparison options')
+    csv_group.add_argument('--csv-rtol', type=float, default=1e-5,
+                          help='Relative tolerance for numerical comparison in CSV files')
+    csv_group.add_argument('--csv-atol', type=float, default=1e-8,
+                          help='Absolute tolerance for numerical comparison in CSV files')
+    csv_group.add_argument('--csv-delimiter', default=',', help='CSV field delimiter (default: comma)')
+    csv_group.add_argument('--csv-quotechar', default='"',
+                          help='Character used for quoting fields in CSV (default: double quote)')
+
+    # JSON comparison options
+    json_group = compare_parser.add_argument_group('JSON comparison options')
+    json_group.add_argument('--json-compare-mode', choices=['exact', 'key-based'], default='exact',
+                           help='JSON comparison mode: exact (default) or key-based')
+    json_group.add_argument('--json-key-field', help='Key field(s) to use for key-based JSON comparison')
+
+    # H5 comparison options
+    h5_group = compare_parser.add_argument_group('HDF5 comparison options')
+    h5_group.add_argument('--h5-table', help='Comma-separated list of table names to compare in HDF5 files')
+    h5_group.add_argument('--h5-table-regex',
+                         help='Comma-separated list of regular expression patterns to match table names in HDF5 files')
+    h5_group.add_argument('--h5-structure-only', action='store_true',
+                         help='Only compare HDF5 file structure without comparing content')
+    h5_group.add_argument('--h5-show-content-diff', action='store_true',
+                         help='Show detailed content differences when content differs')
+    h5_group.add_argument('--h5-rtol', type=float, default=1e-5,
+                         help='Relative tolerance for numerical comparison in HDF5 files')
+    h5_group.add_argument('--h5-atol', type=float, default=1e-8,
+                         help='Absolute tolerance for numerical comparison in HDF5 files')
+    h5_group.add_argument('--h5-data-filter', type=str,
+                         help='Data filter to apply before comparison')
+    h5_group.add_argument('--h5-no-expand-path', dest='h5_expand_path', action='store_false',
+                         help='Do not expand HDF5 group paths to compare all sub-items')
+
     return parser
 
 
 def run_tests(args):
     """Run tests based on command line arguments"""
     config_file = Path(args.config_file)
-    
+
     if not config_file.exists():
         print(f"Error: Configuration file not found: {config_file}")
         return False
-    
+
     # Determine file type
     file_ext = config_file.suffix.lower()
-    
+
     # Use getattr for backward compatibility with external callers that
     # construct Namespace objects without the newer arguments.
     history_dir = getattr(args, 'history_dir', None)
     regression_threshold = getattr(args, 'regression_threshold', 1.5)
-    
+
     try:
         if args.parallel:
-            # Use parallel runner
-            runner = ParallelJSONRunner(
-                config_file=str(config_file),
-                workspace=args.workspace,
-                max_workers=args.workers,
-                execution_mode=args.execution_mode,
-                test_case_filter=args.test_case,
-                history_dir=history_dir,
-                regression_threshold=regression_threshold,
-            )
+            # Format-aware parallel runner selection
+            if file_ext in ['.json']:
+                runner = ParallelJSONRunner(
+                    config_file=str(config_file),
+                    workspace=args.workspace,
+                    max_workers=args.workers,
+                    execution_mode=args.execution_mode,
+                    test_case_filter=args.test_case,
+                    history_dir=history_dir,
+                    regression_threshold=regression_threshold,
+                )
+            elif file_ext in ['.yaml', '.yml']:
+                runner = ParallelYAMLRunner(
+                    config_file=str(config_file),
+                    workspace=args.workspace,
+                    max_workers=args.workers,
+                    execution_mode=args.execution_mode,
+                    test_case_filter=args.test_case,
+                    history_dir=history_dir,
+                    regression_threshold=regression_threshold,
+                )
+            else:
+                print(f"Error: Unsupported configuration file format for parallel mode: {file_ext}")
+                return False
         else:
             # Use appropriate single-threaded runner
             if file_ext in ['.json']:
@@ -101,32 +172,32 @@ def run_tests(args):
             else:
                 print(f"Error: Unsupported configuration file format: {file_ext}")
                 return False
-        
+
         # Run tests
         print(f"Running tests from: {config_file}")
         if args.parallel:
             print(f"Parallel mode: {args.execution_mode}, workers: {args.workers or 'auto'}")
-        
+
         success = runner.run_tests()
-        
-        # Output results
+
+        # Output results using ReportGenerator and honor --output-format
         if hasattr(runner, 'results'):
             results = runner.results
-            print(f"\nTest Results:")
-            print(f"Total tests: {results.get('total', 0)}")
-            print(f"Passed: {results.get('passed', 0)}")
-            print(f"Failed: {results.get('failed', 0)}")
-            
-            if args.verbose and 'details' in results:
-                print("\nDetailed Results:")
-                for result in results['details']:
-                    status_symbol = "✓" if result['status'] == 'passed' else "✗"
-                    print(f"  {status_symbol} {result['name']}: {result['status']}")
-                    if result['status'] == 'failed' and result.get('message'):
-                        print(f"    Error: {result['message']}")
-        
+            output_format = getattr(args, 'output_format', 'text')
+
+            if output_format == 'json':
+                print(json.dumps(results, indent=2, ensure_ascii=False))
+            elif output_format == 'html':
+                report_gen = ReportGenerator(results, '')
+                text_report = report_gen.generate_report()
+                html = _format_results_html(results, text_report)
+                print(html)
+            else:
+                report_gen = ReportGenerator(results, '')
+                report_gen.print_report()
+
         return success
-        
+
     except Exception as e:
         print(f"Error running tests: {e}")
         if args.debug:
@@ -135,13 +206,51 @@ def run_tests(args):
         return False
 
 
+def _format_results_html(results, text_report):
+    """Format test results as a basic HTML page."""
+    escaped_report = text_report.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    pass_pct = (results['passed'] / max(results['total'], 1)) * 100
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Test Results</title>
+<style>
+  body {{ font-family: sans-serif; margin: 2em; }}
+  .summary {{ margin-bottom: 1em; }}
+  .passed {{ color: green; }}
+  .failed {{ color: red; }}
+  pre {{ background: #f5f5f5; padding: 1em; border-radius: 4px; }}
+</style>
+</head>
+<body>
+<h1>CLI Test Results</h1>
+<div class="summary">
+  <p>Total: {results['total']} | Passed: <span class="passed">{results['passed']}</span> | Failed: <span class="failed">{results['failed']}</span></p>
+  <p>Pass rate: {pass_pct:.1f}%</p>
+</div>
+<pre>{escaped_report}</pre>
+</body>
+</html>"""
+
+
+def run_compare(args):
+    """Execute file comparison via the compare subcommand."""
+    from .commands.compare import run_comparison
+    exit_code = run_comparison(args)
+    return bool(exit_code == 0)
+
+
 def main():
     """Main entry point for the CLI"""
     parser = create_parser()
     args = parser.parse_args()
-    
+
     if args.command == 'run':
         success = run_tests(args)
+        sys.exit(0 if success else 1)
+    elif args.command == 'compare':
+        success = run_compare(args)
         sys.exit(0 if success else 1)
     else:
         parser.print_help()
@@ -149,4 +258,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main() 
+    main()

@@ -70,9 +70,10 @@ def test_run_tests_uses_json_runner_and_prints_totals(tmp_path, monkeypatch, cap
 
     output = capsys.readouterr().out
     assert success
-    assert "Total tests: 2" in output
+    assert "Total Tests: 2" in output
     assert "Passed: 1" in output
-    assert "bad: failed" in output
+    assert "bad" in output
+    assert "boom" in output
 
 
 def test_run_tests_uses_parallel_runner(tmp_path, monkeypatch):
