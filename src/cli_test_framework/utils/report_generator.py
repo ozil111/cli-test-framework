@@ -19,8 +19,8 @@ class ReportGenerator:
             if detail.get('message'):
                 report += f"   -> {detail['message']}\n"
         
-        # 添加失败案例的详细输出信息
-        failed_tests = [detail for detail in self.results['details'] if detail['status'] == 'failed']
+        # 添加失败案例的详细输出信息（含 timeout 等非通过状态）
+        failed_tests = [detail for detail in self.results['details'] if detail['status'] != 'passed']
         if failed_tests:
             report += "\n" + "="*50 + "\n"
             report += "FAILED TEST CASES DETAILS:\n"
