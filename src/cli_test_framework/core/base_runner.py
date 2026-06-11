@@ -16,7 +16,7 @@ class BaseRunner(ABC):
         if workspace:
             self.workspace = Path(workspace)
         else:
-            self.workspace = Path(__file__).parent.parent.parent
+            self.workspace = Path.cwd()
         self.config_path = self.workspace / config_file
         self.test_cases: List[TestCase] = []
         self.test_case_filter: Optional[List[str]] = test_case_filter
