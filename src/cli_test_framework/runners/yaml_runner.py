@@ -3,7 +3,7 @@ from ..core.base_runner import BaseRunner
 from ..core.test_case import TestCase, TestCaseStep
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
-from ..utils.path_resolver import PathResolver, parse_command_string, resolve_paths
+from ..utils.path_resolver import PathResolver, resolve_paths
 import sys
 
 class YAMLRunner(BaseRunner):
@@ -35,8 +35,9 @@ class YAMLRunner(BaseRunner):
                             raise ValueError(
                                 f"Step in test case '{case.get('name', 'unnamed')}' is missing required fields"
                             )
-                        step["command"] = self.path_resolver.parse_command_string(step["command"])
-                        step["args"] = self.path_resolver.resolve_paths(step["args"])
+                        executable, leading_args = self.path_resolver.split_command(step["command"])
+                        step["command"] = executable
+                        step["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(step["args"])
                         steps.append(TestCaseStep(**{
                             "command": step["command"],
                             "args": step["args"],
@@ -56,8 +57,9 @@ class YAMLRunner(BaseRunner):
                         raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
                     
                     # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
-                    case["command"] = self.path_resolver.parse_command_string(case["command"])
-                    case["args"] = self.path_resolver.resolve_paths(case["args"])
+                    executable, leading_args = self.path_resolver.split_command(case["command"])
+                    case["command"] = executable
+                    case["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(case["args"])
                     self.test_cases.append(TestCase(**case))
                 
             print(f"Successfully loaded {len(self.test_cases)} test cases")

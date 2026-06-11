@@ -6,14 +6,14 @@ Utility functions for the CLI Testing Framework
 
 from .path_resolver import (
     PathResolver,
-    parse_command_string,
     resolve_paths,
     resolve_command,
+    split_command,
 )
 
 __all__ = [
     'PathResolver',
-    'parse_command_string',
     'resolve_paths',
     'resolve_command',
+    'split_command',
 ]

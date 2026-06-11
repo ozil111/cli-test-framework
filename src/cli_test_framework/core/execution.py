@@ -2,16 +2,28 @@ import subprocess
 import time
 import os
 import shlex
-from typing import Optional, Dict
+from typing import List, Optional, Dict
 
 from .assertions import Assertions
 from .types import ExpectedResult, TestCaseData, TestResultData
 
+# Commands that are shell builtins (not real executables).
+# With shell=False, these must be wrapped via the platform shell.
+if os.name == 'nt':
+    _SHELL_BUILTINS = frozenset(['echo', 'dir', 'type', 'copy', 'del', 'ren',
+                                  'cd', 'md', 'rd', 'set', 'cls', 'move'])
+else:
+    _SHELL_BUILTINS = frozenset(['echo', 'cd', 'pwd', 'export', 'source'])
 
-def _quote_shell_arg(arg: str) -> str:
-    if os.name == "nt":
-        return subprocess.list2cmdline([arg])
-    return shlex.quote(arg)
+
+def _normalize_cmd_list(command: str, args: List[str]) -> List[str]:
+    """If command is a shell builtin, wrap with the platform shell interpreter."""
+    if command.lower() in _SHELL_BUILTINS:
+        if os.name == 'nt':
+            return ['cmd', '/d', '/c', command, *args]
+        else:
+            return ['/bin/sh', '-c', shlex.join([command, *args])]
+    return [command, *args]
 
 
 def validate_result(expected: ExpectedResult, actual: TestResultData) -> None:
@@ -41,9 +53,10 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         env: Optional environment variables to inject/override (merged with os.environ)
     """
     start_time = time.time()
-    quoted_args = [_quote_shell_arg(str(arg)) for arg in case["args"]]
-    full_command = f"{case['command']} {' '.join(quoted_args)}".strip()
+    cmd_list = _normalize_cmd_list(case["command"], [str(arg) for arg in case["args"]])
     timeout_limit = case.get("timeout", 3600)
+
+    full_command = " ".join(cmd_list)
 
     result: TestResultData = {
         "name": case["name"],
@@ -63,12 +76,12 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
 
     try:
         process = subprocess.run(
-            full_command,
+            cmd_list,
             cwd=workspace if workspace else None,
             capture_output=True,
             text=True,
             check=False,
-            shell=True,
+            shell=False,
             timeout=timeout_limit if timeout_limit is not None else None,
             env=current_env,
         )
