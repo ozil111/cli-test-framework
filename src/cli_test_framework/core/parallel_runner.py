@@ -7,6 +7,36 @@ from .base_runner import BaseRunner
 from .test_case import TestCase
 from .process_worker import run_test_in_process
 
+
+class AtomicSemaphore:
+    """
+    支持原子级多令牌获取的信号量，消除逐个 acquire 导致的部分占有死锁。
+
+    与 threading.Semaphore 不同：acquire(n) 在所有 n 个令牌可用时一次性获取，
+    否则等待（支持超时），不会出现"拿了3个等1个，另一个线程也拿了3个等1个"的死锁。
+    """
+
+    def __init__(self, value: int):
+        self._value = value
+        self._cond = threading.Condition()
+
+    def acquire(self, n: int = 1, timeout: Optional[float] = None) -> bool:
+        """Atomically acquire n tokens. Returns True on success, False on timeout."""
+        with self._cond:
+            if not self._cond.wait_for(
+                lambda: self._value >= n,
+                timeout=timeout,
+            ):
+                return False
+            self._value -= n
+            return True
+
+    def release(self, n: int = 1) -> None:
+        """Release n tokens and notify all waiters."""
+        with self._cond:
+            self._value += n
+            self._cond.notify_all()
+
 class ParallelRunner(BaseRunner):
     """并行测试运行器基类，支持多线程和多进程执行"""
     

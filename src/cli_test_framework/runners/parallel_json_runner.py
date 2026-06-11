@@ -4,7 +4,7 @@ import threading
 import os
 from typing import Optional, Dict, Any
 
-from ..core.parallel_runner import ParallelRunner
+from ..core.parallel_runner import ParallelRunner, AtomicSemaphore
 from ..core.config_loader import parse_test_cases, execute_sequence
 from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
@@ -48,17 +48,19 @@ class ParallelJSONRunner(ParallelRunner):
         self.path_resolver = PathResolver(self.workspace)
         self._print_lock = threading.Lock()  # 用于控制输出顺序
         
-        # 3. 初始化资源池 (Semaphore)
-        # 这里的 value 代表"当前剩余可用的核心数"
-        # Note: Semaphore only works for thread mode. Process mode will use original behavior.
-        self.cpu_semaphore = threading.Semaphore(self.safe_capacity) if execution_mode == "thread" else None
+        # 3. 初始化资源池 (AtomicSemaphore，避免逐个 acquire 的部分占有死锁)
+        self.cpu_semaphore = AtomicSemaphore(self.safe_capacity) if execution_mode == "thread" else None
         
         print(f"✅ [Resource Manager] Detected {self.total_physical} CPUs. Pool size set to {self.safe_capacity}.")
 
     def _assign_relative_cpu_cores(self) -> None:
         """
-        If cpu_cores is unset, allocate proportionally based on estimated_time/min_memory_mb
-        across all cases, relative to available safe_capacity.
+        Assign cpu_cores proportionally based on estimated_time and min_memory_mb
+        for cases without an explicit cpu_cores setting.
+
+        Weight formula: estimated_time (seconds) + min_memory_mb / 100.
+        - time component: longer cases get more cores
+        - memory component: memory-heavy cases get a small bonus (100 MB ≈ 1 second worth of weight)
         """
         candidates = [c for c in self.test_cases if not (c.resources and "cpu_cores" in c.resources)]
         if not candidates:
@@ -68,22 +70,31 @@ class ParallelJSONRunner(ParallelRunner):
             res = case.resources or {}
             est = float(res.get("estimated_time") or 0)
             mem = float(res.get("min_memory_mb") or 0)
-            # Simple additive weight; keep >=1 to avoid zero allocation.
-            return max(1.0, est / 3600.0 + mem / 4000.0)
+            return est + mem / 100.0
 
         weights = [weight(c) for c in candidates]
         total_weight = sum(weights)
-        if total_weight <= 0:
-            total_weight = float(len(weights))  # uniform
 
-        remaining = self.safe_capacity
-        for case, w in zip(candidates, weights):
-            share = max(1, int(round(self.safe_capacity * (w / total_weight))))
-            share = min(self.safe_capacity, max(1, min(share, remaining))) if remaining > 0 else 1
+        if total_weight <= 0:
+            # All weights zero: give every case 1 core
+            for case in candidates:
+                if not case.resources:
+                    case.resources = {}
+                case.resources["cpu_cores"] = 1
+            return
+
+        allocated = 0
+        # Sort by weight descending so heavier cases get rounded-up shares first
+        indexed = sorted(enumerate(zip(candidates, weights)), key=lambda x: x[1][1], reverse=True)
+        for rank, (idx, (case, w)) in enumerate(indexed):
+            if rank == len(indexed) - 1:
+                share = max(1, self.safe_capacity - allocated)
+            else:
+                share = max(1, int(round(self.safe_capacity * w / total_weight)))
             if not case.resources:
                 case.resources = {}
             case.resources["cpu_cores"] = share
-            remaining = max(0, remaining - share)
+            allocated += share
 
     def load_test_cases(self) -> None:
         """从JSON文件加载测试用例"""
@@ -156,30 +167,25 @@ class ParallelJSONRunner(ParallelRunner):
         
         # 只在 thread 模式下使用信号量进行资源管理
         if self.execution_mode == "thread" and self.cpu_semaphore is not None:
-            try:
-                # 2. 申请资源 (阻塞等待)
-                # 必须循环申请，因为 Semaphore 一次只给 1 个
-                for _ in range(required_cores):
-                    self.cpu_semaphore.acquire()
-                    tokens_acquired += 1
-                
-                # 3. 构造环境约束
-                # 这步非常重要：显式告诉求解器"你只能用这么多核"
-                # 这能防止求解器无视 Python 的调度，私自占满 CPU
-                task_env = {
-                    "OMP_NUM_THREADS": str(required_cores),
-                    "MKL_NUM_THREADS": str(required_cores),  # 针对 Intel 数学库
-                    "NPROC": str(required_cores)             # 某些求解器专用
-                }
-                
-                # 打印调试信息
-                with self._print_lock:
-                    print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
-            except Exception as e:
-                # 如果获取资源失败，记录错误但不阻塞
-                with self._print_lock:
-                    print(f"  [Scheduler] Warning: Failed to acquire resources for '{case.name}': {e}")
-        
+            # 2. 原子申请资源：所有 required_cores 个令牌一次性获取，避免部分占有死锁
+            if not self.cpu_semaphore.acquire(required_cores):
+                # 超时未获取到资源，降级为 1 核执行
+                required_cores = 1
+                self.cpu_semaphore.acquire(1)
+                tokens_acquired = 1
+            else:
+                tokens_acquired = required_cores
+
+            # 3. 构造环境约束，限制求解器使用的核心数
+            task_env = {
+                "OMP_NUM_THREADS": str(required_cores),
+                "MKL_NUM_THREADS": str(required_cores),
+                "NPROC": str(required_cores),
+            }
+
+            with self._print_lock:
+                print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
+
         # 4. 执行测试（支持 sequence 和单命令两种模式）
         if case.steps:
             result = self._run_sequence(case)
@@ -217,17 +223,10 @@ class ParallelJSONRunner(ParallelRunner):
                 with self._print_lock:
                     print(f"  [Worker] Error for {case.name}: {result['message']}")
         
-        # 5. 归还资源
+        # 5. 归还资源（一次性原子释放）
         if self.execution_mode == "thread" and self.cpu_semaphore is not None and tokens_acquired > 0:
-            try:
-                for _ in range(tokens_acquired):
-                    self.cpu_semaphore.release()
-                
-                with self._print_lock:
-                    # 只有看到这条日志，说明资源释放了，下一个排队的任务才能开始
-                    print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
-            except Exception as e:
-                with self._print_lock:
-                    print(f"  [Scheduler] Warning: Failed to release resources for '{case.name}': {e}")
+            self.cpu_semaphore.release(tokens_acquired)
+            with self._print_lock:
+                print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
 
         return result 

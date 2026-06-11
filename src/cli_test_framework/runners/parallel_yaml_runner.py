@@ -3,7 +3,7 @@ import threading
 import os
 from typing import Optional, Dict, Any
 
-from ..core.parallel_runner import ParallelRunner
+from ..core.parallel_runner import ParallelRunner, AtomicSemaphore
 from ..core.config_loader import parse_test_cases, execute_sequence
 from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
@@ -30,7 +30,7 @@ class ParallelYAMLRunner(ParallelRunner):
         self.path_resolver = PathResolver(self.workspace)
         self._print_lock = threading.Lock()
 
-        self.cpu_semaphore = threading.Semaphore(self.safe_capacity) if execution_mode == "thread" else None
+        self.cpu_semaphore = AtomicSemaphore(self.safe_capacity) if execution_mode == "thread" else None
 
         print(f"✅ [Resource Manager] Detected {self.total_physical} CPUs. Pool size set to {self.safe_capacity}.")
 
@@ -43,21 +43,29 @@ class ParallelYAMLRunner(ParallelRunner):
             res = case.resources or {}
             est = float(res.get("estimated_time") or 0)
             mem = float(res.get("min_memory_mb") or 0)
-            return max(1.0, est / 3600.0 + mem / 4000.0)
+            return est + mem / 100.0
 
         weights = [weight(c) for c in candidates]
         total_weight = sum(weights)
-        if total_weight <= 0:
-            total_weight = float(len(weights))
 
-        remaining = self.safe_capacity
-        for case, w in zip(candidates, weights):
-            share = max(1, int(round(self.safe_capacity * (w / total_weight))))
-            share = min(self.safe_capacity, max(1, min(share, remaining))) if remaining > 0 else 1
+        if total_weight <= 0:
+            for case in candidates:
+                if not case.resources:
+                    case.resources = {}
+                case.resources["cpu_cores"] = 1
+            return
+
+        allocated = 0
+        indexed = sorted(enumerate(zip(candidates, weights)), key=lambda x: x[1][1], reverse=True)
+        for rank, (idx, (case, w)) in enumerate(indexed):
+            if rank == len(indexed) - 1:
+                share = max(1, self.safe_capacity - allocated)
+            else:
+                share = max(1, int(round(self.safe_capacity * w / total_weight)))
             if not case.resources:
                 case.resources = {}
             case.resources["cpu_cores"] = share
-            remaining = max(0, remaining - share)
+            allocated += share
 
     def load_test_cases(self) -> None:
         """从YAML文件加载测试用例"""
@@ -115,22 +123,21 @@ class ParallelYAMLRunner(ParallelRunner):
         task_env = None
 
         if self.execution_mode == "thread" and self.cpu_semaphore is not None:
-            try:
-                for _ in range(required_cores):
-                    self.cpu_semaphore.acquire()
-                    tokens_acquired += 1
+            if not self.cpu_semaphore.acquire(required_cores):
+                required_cores = 1
+                self.cpu_semaphore.acquire(1)
+                tokens_acquired = 1
+            else:
+                tokens_acquired = required_cores
 
-                task_env = {
-                    "OMP_NUM_THREADS": str(required_cores),
-                    "MKL_NUM_THREADS": str(required_cores),
-                    "NPROC": str(required_cores)
-                }
+            task_env = {
+                "OMP_NUM_THREADS": str(required_cores),
+                "MKL_NUM_THREADS": str(required_cores),
+                "NPROC": str(required_cores),
+            }
 
-                with self._print_lock:
-                    print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
-            except Exception as e:
-                with self._print_lock:
-                    print(f"  [Scheduler] Warning: Failed to acquire resources for '{case.name}': {e}")
+            with self._print_lock:
+                print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
 
         if case.steps:
             result = self._run_sequence(case)
@@ -167,13 +174,8 @@ class ParallelYAMLRunner(ParallelRunner):
                     print(f"  [Worker] Error for {case.name}: {result['message']}")
 
         if self.execution_mode == "thread" and self.cpu_semaphore is not None and tokens_acquired > 0:
-            try:
-                for _ in range(tokens_acquired):
-                    self.cpu_semaphore.release()
-                with self._print_lock:
-                    print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
-            except Exception as e:
-                with self._print_lock:
-                    print(f"  [Scheduler] Warning: Failed to release resources for '{case.name}': {e}")
+            self.cpu_semaphore.release(tokens_acquired)
+            with self._print_lock:
+                print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
 
         return result
