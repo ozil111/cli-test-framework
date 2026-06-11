@@ -2,7 +2,7 @@ import subprocess
 import time
 import os
 import shlex
-from typing import List, Optional, Dict
+from typing import Any, List, Optional, Dict
 
 from .assertions import Assertions
 from .types import ExpectedResult, TestCaseData, TestResultData
@@ -26,9 +26,18 @@ def _normalize_cmd_list(command: str, args: List[str]) -> List[str]:
     return [command, *args]
 
 
-def validate_result(expected: ExpectedResult, actual: TestResultData) -> None:
+def validate_result(
+    expected: ExpectedResult,
+    actual: TestResultData,
+    workspace: Optional[str] = None,
+) -> None:
     """
     Pure validation logic. Raises AssertionError on mismatch.
+
+    :param expected:  Expected result specification from the test case.
+    :param actual:    Actual test result data produced by command execution.
+    :param workspace: Working directory; used to resolve relative file paths in
+                      ``compare_files`` assertions.
     """
     assertions = Assertions()
 
@@ -41,6 +50,33 @@ def validate_result(expected: ExpectedResult, actual: TestResultData) -> None:
 
     if "output_matches" in expected and expected["output_matches"]:
         assertions.matches(actual["output"], expected["output_matches"])
+
+    if "compare_files" in expected:
+        for spec in expected["compare_files"]:
+            _dispatch_file_compare(spec, workspace, assertions)
+
+
+def _dispatch_file_compare(
+    spec: Dict[str, Any],
+    workspace: Optional[str],
+    assertions: Assertions,
+) -> None:
+    """Extract fields from a compare_files spec dict and delegate to Assertions.compare_files."""
+    actual_path = spec.get("actual", "")
+    baseline_path = spec.get("baseline", "")
+    file_type = spec.get("type", None)
+
+    # All remaining keys are forwarded as comparator kwargs
+    known_keys = {"actual", "baseline", "type"}
+    comparator_kwargs = {k: v for k, v in spec.items() if k not in known_keys}
+
+    assertions.compare_files(
+        actual_path=actual_path,
+        baseline_path=baseline_path,
+        file_type=file_type,
+        workspace=workspace,
+        **comparator_kwargs,
+    )
 
 
 def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> TestResultData:
@@ -90,7 +126,7 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         result["output"] = output
         result["return_code"] = process.returncode
 
-        validate_result(case["expected"], result)
+        validate_result(case["expected"], result, workspace)
         result["status"] = "passed"
     except subprocess.TimeoutExpired as exc:
         result["status"] = "timeout"

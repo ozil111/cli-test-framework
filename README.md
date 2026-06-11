@@ -14,11 +14,12 @@ CLI Test Framework was built for that workflow.
 
 ## Highlights
 
+- **Golden File Assertion** — `compare_files` embedded in test `expected`, compares output files against baselines with tolerance
 - **Parallel Execution** — Multi-thread / multi-process, 3-5x speedup
 - **Resource-Aware Scheduling** — Automatic CPU core management, prevents solver thread runaway
 - **Sequence Steps** — Multi-step execution within a single test case, fail-fast
 - **Setup Module** — Auto-configure environment variables before tests, auto-cleanup after
-- **File Comparison** — Text / JSON / HDF5 / Binary, ready to use from command line
+- **File Comparison** — Text / JSON / CSV / XML / HDF5 / Binary, with CLI and embedded assertion support
 - **Filtered Execution** — Run specific test cases by name
 
 ## Quick Start
@@ -53,6 +54,54 @@ pip install cli-test-framework
 cli-test run test_cases.json
 ```
 
+### Golden File Comparison in Tests
+
+Run a simulation, then compare its output file against a reference:
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "FEA displacement check",
+            "command": "my_solver",
+            "args": ["--input", "case1.dat", "--output", "out.h5"],
+            "expected": {
+                "return_code": 0,
+                "compare_files": [
+                    {
+                        "actual": "out.h5",
+                        "baseline": "ref/golden.h5",
+                        "rtol": 1e-5,
+                        "atol": 1e-8,
+                        "tables": ["NASTRAN/RESULT/NODAL/DISPLACEMENT"]
+                    }
+                ]
+            }
+        }
+    ]
+}
+```
+
+- `actual` – file produced by the command
+- `baseline` – reference file to compare against
+- `type` – comparator type (auto-detected from extension if omitted: `.h5`→h5, `.json`→json, `.csv`→csv, `.xml`→xml, `.txt`→text)
+- all other keys are forwarded as comparator parameters (`rtol`, `atol`, `tables`, `table_regex`, `data_filter`, `encoding`, `structure_only`, `delimiter`, `compare_mode`, `key_field`, etc.)
+
+Multiple files and mixed assertion types coexist naturally:
+
+```json
+{
+    "expected": {
+        "return_code": 0,
+        "output_contains": ["simulation finished"],
+        "compare_files": [
+            {"actual": "out.h5", "baseline": "ref/disp.h5", "rtol": 1e-5},
+            {"actual": "report.csv", "baseline": "ref/expected.csv", "rtol": 1e-6}
+        ]
+    }
+}
+```
+
 ### Parallel Execution
 
 ```bash
@@ -73,7 +122,7 @@ runner = ParallelJSONRunner(config_file="test_cases.json", max_workers=4, execut
 success = runner.run_tests()
 ```
 
-### File Comparison
+### File Comparison (Standalone CLI)
 
 ```bash
 compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
@@ -82,6 +131,10 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 📖 **Full Documentation**: [docs/user_manual.md](docs/user_manual_en.md)
 
 ## Changelog
+
+### 0.6.0
+
+- **Golden file assertion**: `compare_files` is now a first-class assertion in test `expected` — compare output files against baselines directly in your test definitions, with full tolerance and parameter support. The `file_comparator` subsystem is now integrated into the assertion pipeline, completing the closed loop from command execution to result verification.
 
 ### 0.5.2
 

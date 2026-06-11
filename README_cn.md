@@ -6,11 +6,12 @@
 
 ## 功能亮点
 
+- **Golden File 断言** — `compare_files` 嵌入测试 `expected`，运行后自动对比产物文件与基准文件，支持容差
 - **并行执行** — 多线程/多进程，3-5 倍加速
 - **资源感知调度** — 自动管理 CPU 核心分配，防止求解器线程失控
 - **顺序步骤测试** — 单个用例内多步执行，失败即停
 - **Setup 模块** — 测试前自动配置环境变量，测试后自动清理
-- **文件比较** — 文本 / JSON / HDF5 / 二进制，命令行直接用
+- **文件比较** — 文本 / JSON / CSV / XML / HDF5 / 二进制，支持 CLI 独立使用和内嵌断言两种方式
 - **筛选运行** — 按名称指定运行哪些用例
 
 ## 快速开始
@@ -45,6 +46,54 @@ pip install cli-test-framework
 cli-test run test_cases.json
 ```
 
+### 测试中对比 Golden File
+
+运行仿真命令，自动对比输出文件与基准：
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "FEA 位移检查",
+            "command": "my_solver",
+            "args": ["--input", "case1.dat", "--output", "out.h5"],
+            "expected": {
+                "return_code": 0,
+                "compare_files": [
+                    {
+                        "actual": "out.h5",
+                        "baseline": "ref/golden.h5",
+                        "rtol": 1e-5,
+                        "atol": 1e-8,
+                        "tables": ["NASTRAN/RESULT/NODAL/DISPLACEMENT"]
+                    }
+                ]
+            }
+        }
+    ]
+}
+```
+
+- `actual` — 命令产出的文件
+- `baseline` — 用于对比的基准文件
+- `type` — 比较器类型（省略时从后缀自动检测：`.h5`→h5, `.json`→json, `.csv`→csv, `.xml`→xml, `.txt`→text）
+- 其余字段透传到对应比较器（`rtol`、`atol`、`tables`、`table_regex`、`data_filter`、`encoding`、`structure_only`、`delimiter`、`compare_mode`、`key_field` 等）
+
+支持同时对比多个文件，以及与已有断言混用：
+
+```json
+{
+    "expected": {
+        "return_code": 0,
+        "output_contains": ["仿真完成"],
+        "compare_files": [
+            {"actual": "out.h5", "baseline": "ref/disp.h5", "rtol": 1e-5},
+            {"actual": "report.csv", "baseline": "ref/expected.csv", "rtol": 1e-6}
+        ]
+    }
+}
+```
+
 ### 并行运行
 
 ```bash
@@ -65,7 +114,7 @@ runner = ParallelJSONRunner(config_file="test_cases.json", max_workers=4, execut
 success = runner.run_tests()
 ```
 
-### 文件比较
+### 文件比较（独立 CLI）
 
 ```bash
 compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
@@ -74,6 +123,10 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 📖 **完整使用说明**：[docs/user_manual.md](docs/user_manual.md)
 
 ## 更新日志
+
+### 0.6.0
+
+- **Golden File 断言**：`compare_files` 成为测试 `expected` 中的一等断言，支持在测试定义中直接声明输出文件与基准文件的对比（带容差和全部比较器参数）。`file_comparator` 子系统现已集成到断言管线中，形成从命令执行到产物验证的完整闭环。
 
 ### 0.5.1
 - 支持按名称筛选运行指定用例（`-t` / `test_case_filter`）
