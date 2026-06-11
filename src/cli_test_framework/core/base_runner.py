@@ -127,65 +127,12 @@ class BaseRunner(ABC):
 
     def _run_sequence(self, case: TestCase) -> Dict[str, Any]:
         """Run a sequence test case with multiple steps (fail-fast)."""
-        combined_output = ""
-        total_duration = 0.0
-        all_passed = True
-        last_result = None
-        failed_step = None
-
-        for i, step in enumerate(case.steps):
-            step_name = f"{case.name} [step {i+1}/{len(case.steps)}]"
-            case_data = {
-                "name": step_name,
-                "command": step.command,
-                "args": step.args,
-                "expected": step.expected,
-                "description": None,
-                "timeout": step.timeout,
-                "resources": None,
-            }
-
-            command_preview = f"{step.command} {' '.join(step.args)}".strip()
-            print(f"  Executing step {i+1}/{len(case.steps)}: {command_preview}")
-
-            result = execute_single_test_case(
-                case_data, str(self.workspace) if self.workspace else None
-            )
-
-            if result["output"].strip():
-                print("  Command output:")
-                for line in result["output"].splitlines():
-                    print(f"    {line}")
-
-            combined_output += result["output"]
-            total_duration += result["duration"]
-            last_result = result
-
-            if result["status"] != "passed":
-                all_passed = False
-                failed_step = i + 1
-                if result.get("message"):
-                    print(f"  Error at step {i+1}: {result['message']}")
-                break
-
-        status = "passed" if all_passed else last_result["status"]
-        message = ""
-        if not all_passed:
-            message = f"Failed at step {failed_step}/{len(case.steps)}: {last_result['message']}"
-
-        command_summary = " -> ".join(
-            f"{s.command} {' '.join(s.args)}".strip() for s in case.steps
+        from .config_loader import execute_sequence
+        return execute_sequence(
+            case_name=case.name,
+            steps=case.steps,
+            workspace=str(self.workspace) if self.workspace else None,
         )
-
-        return {
-            "name": case.name,
-            "status": status,
-            "message": message,
-            "command": command_summary,
-            "output": combined_output,
-            "return_code": last_result["return_code"] if last_result else None,
-            "duration": total_duration,
-        }
 
     @abstractmethod
     def run_single_test(self, case: TestCase) -> Dict[str, str]:

@@ -1,10 +1,12 @@
+import sys
 from typing import Optional, Dict, Any
+
 from ..core.base_runner import BaseRunner
-from ..core.test_case import TestCase, TestCaseStep
+from ..core.config_loader import parse_test_cases
+from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
-from ..utils.path_resolver import PathResolver, resolve_paths
-import sys
+from ..utils.path_resolver import PathResolver
 
 class YAMLRunner(BaseRunner):
     def __init__(self, config_file="test_cases.yaml", workspace: Optional[str] = None,
@@ -21,47 +23,10 @@ class YAMLRunner(BaseRunner):
             import yaml
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
-                
-            # 加载setup配置
-            self.load_setup_from_config(config)
 
-            for case in config["test_cases"]:
-                if "steps" in case:
-                    # Sequence mode: case has ordered steps
-                    steps = []
-                    for step in case["steps"]:
-                        step_required = ["command", "args", "expected"]
-                        if not all(field in step for field in step_required):
-                            raise ValueError(
-                                f"Step in test case '{case.get('name', 'unnamed')}' is missing required fields"
-                            )
-                        executable, leading_args = self.path_resolver.split_command(step["command"])
-                        step["command"] = executable
-                        step["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(step["args"])
-                        steps.append(TestCaseStep(**{
-                            "command": step["command"],
-                            "args": step["args"],
-                            "expected": step["expected"],
-                            "timeout": step.get("timeout"),
-                        }))
-                    self.test_cases.append(TestCase(
-                        name=case["name"],
-                        steps=steps,
-                        description=case.get("description", ""),
-                        resources=case.get("resources"),
-                    ))
-                else:
-                    # Single command mode (backward compatible)
-                    required_fields = ["name", "command", "args", "expected"]
-                    if not all(field in case for field in required_fields):
-                        raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
-                    
-                    # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
-                    executable, leading_args = self.path_resolver.split_command(case["command"])
-                    case["command"] = executable
-                    case["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(case["args"])
-                    self.test_cases.append(TestCase(**case))
-                
+            self.load_setup_from_config(config)
+            self.test_cases = parse_test_cases(config, self.workspace, self.path_resolver)
+
             print(f"Successfully loaded {len(self.test_cases)} test cases")
         except Exception as e:
             sys.exit(f"Failed to load configuration file: {str(e)}")

@@ -1,13 +1,15 @@
-from typing import Optional, Dict, Any
-from ..core.parallel_runner import ParallelRunner
-from ..core.test_case import TestCase, TestCaseStep
-from ..core.execution import execute_single_test_case
-from ..core.types import TestCaseData
-from ..utils.path_resolver import PathResolver, resolve_paths
 import json
 import sys
 import threading
 import os
+from typing import Optional, Dict, Any
+
+from ..core.parallel_runner import ParallelRunner
+from ..core.config_loader import parse_test_cases, execute_sequence
+from ..core.test_case import TestCase
+from ..core.execution import execute_single_test_case
+from ..core.types import TestCaseData
+from ..utils.path_resolver import PathResolver
 
 class ParallelJSONRunner(ParallelRunner):
     """并行JSON测试运行器"""
@@ -89,45 +91,8 @@ class ParallelJSONRunner(ParallelRunner):
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
 
-            # 加载setup配置
             self.load_setup_from_config(config)
-
-            for case in config["test_cases"]:
-                if "steps" in case:
-                    # Sequence mode: case has ordered steps
-                    steps = []
-                    for step in case["steps"]:
-                        step_required = ["command", "args", "expected"]
-                        if not all(field in step for field in step_required):
-                            raise ValueError(
-                                f"Step in test case '{case.get('name', 'unnamed')}' is missing required fields"
-                            )
-                        executable, leading_args = self.path_resolver.split_command(step["command"])
-                        step["command"] = executable
-                        step["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(step["args"])
-                        steps.append(TestCaseStep(**{
-                            "command": step["command"],
-                            "args": step["args"],
-                            "expected": step["expected"],
-                            "timeout": step.get("timeout"),
-                        }))
-                    self.test_cases.append(TestCase(
-                        name=case["name"],
-                        steps=steps,
-                        description=case.get("description", ""),
-                        resources=case.get("resources"),
-                    ))
-                else:
-                    # Single command mode (backward compatible)
-                    required_fields = ["name", "command", "args", "expected"]
-                    if not all(field in case for field in required_fields):
-                        raise ValueError(f"Test case {case.get('name', 'unnamed')} is missing required fields")
-
-                    # Use resolver attribute (keeps backward compatibility with tests monkeypatching it)
-                    executable, leading_args = self.path_resolver.split_command(case["command"])
-                    case["command"] = executable
-                    case["args"] = resolve_paths(leading_args, str(self.workspace)) + self.path_resolver.resolve_paths(case["args"])
-                    self.test_cases.append(TestCase(**case))
+            self.test_cases = parse_test_cases(config, self.workspace, self.path_resolver)
 
             print(f"Successfully loaded {len(self.test_cases)} test cases")
 
@@ -160,68 +125,13 @@ class ParallelJSONRunner(ParallelRunner):
 
     def _run_sequence(self, case: TestCase) -> Dict[str, Any]:
         """Run a sequence test case with multiple steps (fail-fast, thread-safe printing)."""
-        combined_output = ""
-        total_duration = 0.0
-        all_passed = True
-        last_result = None
-        failed_step = None
-
-        for i, step in enumerate(case.steps):
-            step_name = f"{case.name} [step {i+1}/{len(case.steps)}]"
-            case_data = {
-                "name": step_name,
-                "command": step.command,
-                "args": step.args,
-                "expected": step.expected,
-                "description": None,
-                "timeout": step.timeout,
-                "resources": None,
-            }
-
-            command_preview = f"{step.command} {' '.join(step.args)}".strip()
-            with self._print_lock:
-                print(f"  [Worker] Executing step {i+1}/{len(case.steps)}: {command_preview}")
-
-            result = execute_single_test_case(
-                case_data, str(self.workspace) if self.workspace else None
-            )
-
-            if result["output"].strip():
-                with self._print_lock:
-                    print(f"  [Worker] Command output for {step_name}:")
-                    for line in result["output"].splitlines():
-                        print(f"    {line}")
-
-            combined_output += result["output"]
-            total_duration += result["duration"]
-            last_result = result
-
-            if result["status"] != "passed":
-                all_passed = False
-                failed_step = i + 1
-                if result.get("message"):
-                    with self._print_lock:
-                        print(f"  [Worker] Error at step {i+1}: {result['message']}")
-                break
-
-        status = "passed" if all_passed else last_result["status"]
-        message = ""
-        if not all_passed:
-            message = f"Failed at step {failed_step}/{len(case.steps)}: {last_result['message']}"
-
-        command_summary = " -> ".join(
-            f"{s.command} {' '.join(s.args)}".strip() for s in case.steps
+        return execute_sequence(
+            case_name=case.name,
+            steps=case.steps,
+            workspace=str(self.workspace) if self.workspace else None,
+            print_prefix="[Worker]",
+            lock=self._print_lock,
         )
-
-        return {
-            "name": case.name,
-            "status": status,
-            "message": message,
-            "command": command_summary,
-            "output": combined_output,
-            "return_code": last_result["return_code"] if last_result else None,
-            "duration": total_duration,
-        }
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
         """
