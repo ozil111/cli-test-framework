@@ -23,7 +23,7 @@ class BinaryComparator(BaseComparator):
              - File hash calculation
     """
     
-    def __init__(self, encoding="utf-8", chunk_size=8192, verbose=False, similarity=False, num_threads=4):
+    def __init__(self, encoding="utf-8", chunk_size=8192, verbose=False, similarity=False, num_threads=4, **kwargs):
         """
         @brief Initialize the binary comparator
         @param encoding str: File encoding (not used for binary files)
@@ -31,8 +31,9 @@ class BinaryComparator(BaseComparator):
         @param verbose bool: Enable verbose logging
         @param similarity bool: Enable similarity index calculation
         @param num_threads int: Number of threads for parallel processing
+        @param **kwargs: Additional parameters (ignored)
         """
-        super().__init__(encoding, chunk_size, verbose)
+        super().__init__(encoding=encoding, chunk_size=chunk_size, verbose=verbose, **kwargs)
         self.similarity = similarity
         self.num_threads = num_threads
 

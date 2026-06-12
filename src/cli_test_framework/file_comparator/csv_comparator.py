@@ -25,7 +25,7 @@ class CsvComparator(TextComparator):
              - Configurable delimiter and quote character
     """
     
-    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False, rtol=1e-5, atol=1e-8):
+    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False, rtol=1e-5, atol=1e-8, **kwargs):
         """
         @brief Initialize CSV comparator with configuration
         @param encoding str: File encoding (default: utf-8)
@@ -35,8 +35,9 @@ class CsvComparator(TextComparator):
         @param verbose bool: Enable verbose output
         @param rtol float: Relative tolerance for numerical comparison (default: 1e-5)
         @param atol float: Absolute tolerance for numerical comparison (default: 1e-8)
+        @param **kwargs: Additional parameters (ignored)
         """
-        super().__init__(encoding, chunk_size, verbose)
+        super().__init__(encoding=encoding, chunk_size=chunk_size, verbose=verbose, **kwargs)
         self.delimiter = delimiter
         self.quotechar = quotechar
         self.rtol = rtol

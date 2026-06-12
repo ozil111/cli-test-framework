@@ -8,7 +8,6 @@
 @date 2025
 """
 
-import os
 import importlib
 import pkgutil
 import logging
@@ -21,7 +20,7 @@ class ComparatorFactory:
     @brief Factory class for creating file comparators
     @details This class manages the creation and registration of different types of file comparators.
              It provides a centralized way to create appropriate comparators based on file type
-             and handles parameter filtering for different comparator types.
+             and automatically discovers and registers comparator classes via plugin scanning.
     """
     _comparators = {}
     _initialized = False
@@ -53,43 +52,12 @@ class ComparatorFactory:
         if not comparator_class:
             if file_type.lower() in ['auto', 'text']:
                 from .text_comparator import TextComparator
-                # Only pass TextComparator supported parameters
-                text_kwargs = {k: v for k, v in kwargs.items() 
-                              if k in ['encoding', 'chunk_size', 'verbose']}
-                return TextComparator(**text_kwargs)
+                return TextComparator(**kwargs)
             else:
                 from .binary_comparator import BinaryComparator
-                # Pass all BinaryComparator supported parameters
-                binary_kwargs = {k: v for k, v in kwargs.items()
-                               if k in ['chunk_size', 'verbose', 'similarity', 'num_threads']}
-                return BinaryComparator(**binary_kwargs)
+                return BinaryComparator(**kwargs)
 
-        # Filter parameters based on comparator type
-        if file_type.lower() == 'h5':
-            # H5 comparator accepts specific parameters
-            h5_kwargs = {k: v for k, v in kwargs.items()
-                        if k in ['tables', 'table_regex', 'encoding', 'chunk_size', 'verbose', 'structure_only', 'show_content_diff', 'debug', 'rtol', 'atol', 'expand_path', 'data_filter']}
-            return comparator_class(**h5_kwargs)
-        elif file_type.lower() == 'binary':
-            # Binary comparator accepts all parameters, including num_threads
-            binary_kwargs = {k: v for k, v in kwargs.items()
-                           if k in ['chunk_size', 'verbose', 'similarity', 'num_threads']}
-            return comparator_class(**binary_kwargs)
-        elif file_type.lower() == 'json':
-            # JSON comparator accepts specific parameters
-            json_kwargs = {k: v for k, v in kwargs.items()
-                         if k in ['encoding', 'chunk_size', 'verbose', 'compare_mode', 'key_field']}
-            return comparator_class(**json_kwargs)
-        elif file_type.lower() == 'csv':
-            # CSV comparator accepts specific parameters
-            csv_kwargs = {k: v for k, v in kwargs.items()
-                         if k in ['encoding', 'delimiter', 'quotechar', 'chunk_size', 'verbose', 'rtol', 'atol']}
-            return comparator_class(**csv_kwargs)
-        else:
-            # Other comparators only accept basic parameters
-            basic_kwargs = {k: v for k, v in kwargs.items()
-                          if k in ['encoding', 'chunk_size', 'verbose']}
-            return comparator_class(**basic_kwargs)
+        return comparator_class(**kwargs)
 
     @staticmethod
     def _load_comparators():
@@ -99,17 +67,9 @@ class ComparatorFactory:
                  This includes both built-in comparators and any additional comparators
                  that follow the naming convention '*_comparator.py'.
         """
-        from .text_comparator import TextComparator
-        from .binary_comparator import BinaryComparator
-
-        ComparatorFactory.register_comparator('text', TextComparator)
-        ComparatorFactory.register_comparator('binary', BinaryComparator)
-
         package_dir = Path(__file__).parent
         for module_info in pkgutil.iter_modules([str(package_dir)]):
-            if module_info.name.endswith('_comparator') and module_info.name not in [
-                'base_comparator', 'text_comparator', 'binary_comparator'
-            ]:
+            if module_info.name.endswith('_comparator') and module_info.name != 'base_comparator':
                 try:
                     module = importlib.import_module(f".{module_info.name}", package=__package__)
 
@@ -135,15 +95,3 @@ class ComparatorFactory:
             ComparatorFactory._load_comparators()
         return sorted(ComparatorFactory._comparators.keys())
 
-# Register built-in comparators
-from .json_comparator import JsonComparator
-from .xml_comparator import XmlComparator
-from .csv_comparator import CsvComparator
-from .text_comparator import TextComparator
-from .binary_comparator import BinaryComparator
-
-ComparatorFactory.register_comparator('json', JsonComparator)
-ComparatorFactory.register_comparator('xml', XmlComparator)
-ComparatorFactory.register_comparator('csv', CsvComparator)
-ComparatorFactory.register_comparator('text', TextComparator)
-ComparatorFactory.register_comparator('binary', BinaryComparator)
