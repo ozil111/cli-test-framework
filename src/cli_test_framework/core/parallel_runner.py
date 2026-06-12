@@ -17,28 +17,63 @@ class AtomicSemaphore:
 
     与 threading.Semaphore 不同：acquire(n) 在所有 n 个令牌可用时一次性获取，
     否则等待（支持超时），不会出现"拿了3个等1个，另一个线程也拿了3个等1个"的死锁。
+
+    唤醒策略：按请求令牌数降序优先唤醒，避免大核数任务被小任务持续抢占导致饥饿。
     """
 
     def __init__(self, value: int):
         self._value = value
-        self._cond = threading.Condition()
+        self._lock = threading.Lock()
+        self._waiters: list = []  # list of (required_n, threading.Event)
+
+    def _grant_tokens(self) -> None:
+        """Grant tokens to eligible waiters, largest request first (anti-starvation)."""
+        if not self._waiters:
+            return
+        # Sort by required_n descending so large-core requests get priority
+        self._waiters.sort(key=lambda x: -x[0])
+        granted: list = []
+        remaining: list = []
+        for n, event in self._waiters:
+            if self._value >= n:
+                self._value -= n
+                granted.append(event)
+            else:
+                remaining.append((n, event))
+        self._waiters = remaining
+        for event in granted:
+            event.set()
 
     def acquire(self, n: int = 1, timeout: Optional[float] = None) -> bool:
         """Atomically acquire n tokens. Returns True on success, False on timeout."""
-        with self._cond:
-            if not self._cond.wait_for(
-                lambda: self._value >= n,
-                timeout=timeout,
-            ):
-                return False
-            self._value -= n
-            return True
+        event = threading.Event()
+        with self._lock:
+            # Fast path: enough tokens and no pending waiters
+            if self._value >= n and not self._waiters:
+                self._value -= n
+                return True
+            self._waiters.append((n, event))
+            self._grant_tokens()
+
+        if not event.wait(timeout=timeout):
+            # Timeout cleanup – guard against race where release granted
+            # tokens between event.wait() returning and lock acquisition
+            with self._lock:
+                if event.is_set():
+                    return True
+                for i, (_, e) in enumerate(self._waiters):
+                    if e is event:
+                        del self._waiters[i]
+                        self._grant_tokens()
+                        break
+            return False
+        return True
 
     def release(self, n: int = 1) -> None:
-        """Release n tokens and notify all waiters."""
-        with self._cond:
+        """Release n tokens, waking eligible waiters with anti-starvation priority."""
+        with self._lock:
             self._value += n
-            self._cond.notify_all()
+            self._grant_tokens()
 
 class ParallelRunner(BaseRunner):
     """并行测试运行器基类，支持多线程和多进程执行"""

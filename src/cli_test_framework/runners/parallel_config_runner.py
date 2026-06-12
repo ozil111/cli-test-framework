@@ -200,7 +200,7 @@ class ParallelConfigRunner(ParallelRunner):
 
         # 2. Acquire resource tokens (thread mode only)
         if self.execution_mode == "thread" and self.cpu_semaphore is not None:
-            if not self.cpu_semaphore.acquire(required_cores):
+            if not self.cpu_semaphore.acquire(required_cores, timeout=10.0):
                 required_cores = 1
                 self.cpu_semaphore.acquire(1)
                 tokens_acquired = 1
