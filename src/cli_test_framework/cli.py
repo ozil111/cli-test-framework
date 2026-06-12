@@ -114,7 +114,10 @@ Examples:
 
 def run_tests(args):
     """Run tests based on command line arguments"""
-    config_file = Path(args.config_file)
+    # Resolve config_file relative to workspace if specified, otherwise cwd.
+    # This matches BaseRunner's resolution (workspace / config_file).
+    workspace_path = Path(args.workspace) if args.workspace else Path.cwd()
+    config_file = (workspace_path / args.config_file).resolve()
 
     if not config_file.exists():
         logger.error("Configuration file not found: %s", config_file)

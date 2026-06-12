@@ -20,7 +20,11 @@ class BaseRunner(ABC):
             self.workspace = Path(workspace)
         else:
             self.workspace = Path.cwd()
-        self.config_path = self.workspace / config_file
+        config_path = Path(config_file)
+        if config_path.is_absolute():
+            self.config_path = config_path
+        else:
+            self.config_path = self.workspace / config_path
         self.test_cases: List[TestCase] = []
         self.test_case_filter: Optional[List[str]] = test_case_filter
         if history_dir:
