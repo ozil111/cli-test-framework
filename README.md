@@ -132,6 +132,12 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 
 ## Changelog
 
+### 0.7.0
+
+- **Unified logging system**: All diagnostic output (executor, runner, scheduler, setup) now uses Python's standard `logging` module under the `cli_test_framework` namespace. Library users can suppress output entirely via `logging.getLogger("cli_test_framework").setLevel(logging.WARNING)`. Removes the previous ad-hoc `print()` + `_print_lock` pattern — `logging` is inherently thread-safe.
+- **Default handler**: A `StreamHandler` at INFO level is installed on first import, so CLI behavior is unchanged. Use `--verbose` / `--debug` to enable DEBUG-level output.
+- **Public API**: `get_logger(name)` exposed via `cli_test_framework.get_logger` for consistent logger creation in extensions.
+
 ### 0.6.0
 
 - **Golden file assertion**: `compare_files` is now a first-class assertion in test `expected` — compare output files against baselines directly in your test definitions, with full tolerance and parameter support. The `file_comparator` subsystem is now integrated into the assertion pipeline, completing the closed loop from command execution to result verification.

@@ -434,6 +434,26 @@ result.differences # list
 
 ## Extension Development
 
+### Controlling Log Output
+
+The framework uses Python's standard `logging` module. By default, a console handler at `INFO` level is installed. You can suppress or redirect output:
+
+```python
+import logging
+
+# Suppress all framework output when used as a library
+logging.getLogger("cli_test_framework").setLevel(logging.WARNING)
+
+# Or remove the handler entirely
+logging.getLogger("cli_test_framework").handlers.clear()
+
+# Redirect to a file
+file_handler = logging.FileHandler("test.log")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+logging.getLogger("cli_test_framework").addHandler(file_handler)
+```
+
 ### Custom Runner
 
 ```python
@@ -451,16 +471,21 @@ class CustomRunner(BaseRunner):
 
 ### Custom Setup Plugin
 
+Use `get_logger` for consistent logging in your extensions:
+
 ```python
-from cli_test_framework import BaseSetup
+from cli_test_framework import BaseSetup, get_logger
 
 class MySetup(BaseSetup):
+    def __init__(self, config=None):
+        super().__init__(config)
+        self.logger = get_logger(__name__)
+
     def setup(self):
-        # self.config provides access to the passed configuration dict
-        pass
+        self.logger.info("Running MySetup...")
 
     def teardown(self):
-        pass
+        self.logger.info("Tearing down MySetup...")
 ```
 
 ### Custom Assertions

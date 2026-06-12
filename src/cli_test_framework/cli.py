@@ -11,10 +11,13 @@ import argparse
 import json
 import sys
 import os
+import logging
 from pathlib import Path
 
 from .runners import JSONRunner, ParallelJSONRunner, ParallelYAMLRunner, YAMLRunner
 from .utils.report_generator import ReportGenerator
+
+logger = logging.getLogger("cli_test_framework.cli")
 
 
 def create_parser():
@@ -114,7 +117,7 @@ def run_tests(args):
     config_file = Path(args.config_file)
 
     if not config_file.exists():
-        print(f"Error: Configuration file not found: {config_file}")
+        logger.error("Configuration file not found: %s", config_file)
         return False
 
     # Determine file type
@@ -149,7 +152,7 @@ def run_tests(args):
                     regression_threshold=regression_threshold,
                 )
             else:
-                print(f"Error: Unsupported configuration file format for parallel mode: {file_ext}")
+                logger.error("Unsupported configuration file format for parallel mode: %s", file_ext)
                 return False
         else:
             # Use appropriate single-threaded runner
@@ -170,13 +173,13 @@ def run_tests(args):
                     regression_threshold=regression_threshold,
                 )
             else:
-                print(f"Error: Unsupported configuration file format: {file_ext}")
+                logger.error("Unsupported configuration file format: %s", file_ext)
                 return False
 
         # Run tests
-        print(f"Running tests from: {config_file}")
+        logger.info("Running tests from: %s", config_file)
         if args.parallel:
-            print(f"Parallel mode: {args.execution_mode}, workers: {args.workers or 'auto'}")
+            logger.info("Parallel mode: %s, workers: %s", args.execution_mode, args.workers or "auto")
 
         success = runner.run_tests()
 
@@ -199,7 +202,7 @@ def run_tests(args):
         return success
 
     except Exception as e:
-        print(f"Error running tests: {e}")
+        logger.error("Error running tests: %s", e)
         if args.debug:
             import traceback
             traceback.print_exc()
@@ -245,6 +248,17 @@ def main():
     """Main entry point for the CLI"""
     parser = create_parser()
     args = parser.parse_args()
+
+    # Configure logging level based on CLI flags
+    pkg_logger = logging.getLogger("cli_test_framework")
+    if hasattr(args, 'debug') and args.debug:
+        pkg_logger.setLevel(logging.DEBUG)
+        for h in pkg_logger.handlers:
+            h.setLevel(logging.DEBUG)
+    elif hasattr(args, 'verbose') and args.verbose:
+        pkg_logger.setLevel(logging.DEBUG)
+        for h in pkg_logger.handlers:
+            h.setLevel(logging.DEBUG)
 
     if args.command == 'run':
         success = run_tests(args)

@@ -1,4 +1,5 @@
 import time
+import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -7,6 +8,8 @@ from .assertions import Assertions
 from .setup import SetupManager, EnvironmentSetup
 from .execution import execute_single_test_case
 from .history_store import load_history, update_case, check_regression, save_history
+
+logger = logging.getLogger("cli_test_framework.core.base_runner")
 
 class BaseRunner(ABC):
     def __init__(self, config_file: str, workspace: Optional[str] = None,
@@ -62,9 +65,10 @@ class BaseRunner(ABC):
             self.test_cases = [tc for tc in self.test_cases if tc.name in self.test_case_filter]
             filtered_out = original_count - len(self.test_cases)
             if filtered_out > 0:
-                print(f"Filtered out {filtered_out} test case(s). Running {len(self.test_cases)} specified case(s).")
+                logger.info("Filtered out %d test case(s). Running %d specified case(s).",
+                            filtered_out, len(self.test_cases))
             if not self.test_cases:
-                print(f"Warning: No matching test cases found for: {self.test_case_filter}")
+                logger.warning("No matching test cases found for: %s", self.test_case_filter)
 
     def run_tests(self) -> bool:
         """Run all test cases and return whether all tests passed"""
@@ -74,7 +78,7 @@ class BaseRunner(ABC):
             self.results["total"] = len(self.test_cases)
             
             if self.results["total"] == 0:
-                print("No test cases to run.")
+                logger.warning("No test cases to run.")
                 return False
             
             # 执行setup任务
@@ -82,26 +86,27 @@ class BaseRunner(ABC):
             
             total_start_time = time.time()
             
-            print(f"\nStarting test execution... Total tests: {self.results['total']}")
-            print("=" * 50)
+            logger.info("Starting test execution... Total tests: %d", self.results["total"])
+            logger.info("=" * 50)
             
             for i, case in enumerate(self.test_cases, 1):
-                print(f"\nRunning test {i}/{self.results['total']}: {case.name}")
+                logger.info("Running test %d/%d: %s", i, self.results["total"], case.name)
                 result = self.run_single_test(case)
                 self.results["details"].append(result)
                 duration = result.get("duration", 0)
                 if result["status"] == "passed":
                     self.results["passed"] += 1
-                    print(f"✓ Test passed: {case.name} ({duration:.2f}s)")
+                    logger.info("✓ Test passed: %s (%.2fs)", case.name, duration)
                 else:
                     self.results["failed"] += 1
-                    print(f"✗ Test failed: {case.name} ({duration:.2f}s)")
+                    logger.error("✗ Test failed: %s (%.2fs)", case.name, duration)
                     if result["message"]:
-                        print(f"  Error: {result['message']}")
+                        logger.error("  Error: %s", result["message"])
                     
             total_duration = time.time() - total_start_time
-            print("\n" + "=" * 50)
-            print(f"Test execution completed in {total_duration:.2f}s. Passed: {self.results['passed']}, Failed: {self.results['failed']}")
+            logger.info("=" * 50)
+            logger.info("Test execution completed in %.2fs. Passed: %d, Failed: %d",
+                        total_duration, self.results["passed"], self.results["failed"])
 
             # Update history & regression detection
             self._update_history()
@@ -121,7 +126,7 @@ class BaseRunner(ABC):
             # Check regression BEFORE updating (compare against old avg)
             warning = check_regression(history, result["name"], duration, self.regression_threshold)
             if warning:
-                print(warning)
+                logger.warning(warning)
             update_case(history, result["name"], duration)
         save_history(self.history_dir, history)
 

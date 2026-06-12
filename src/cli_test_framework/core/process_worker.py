@@ -3,10 +3,13 @@
 用于多进程并行测试执行，避免序列化问题
 """
 
+import logging
 from typing import Dict, Any, List
 from .config_loader import execute_sequence
 from .execution import execute_single_test_case
 from .types import TestCaseData
+
+logger = logging.getLogger("cli_test_framework.core.process_worker")
 
 def _run_sequence_in_process(test_index: int, case_data: Dict[str, Any], workspace: str = None) -> Dict[str, Any]:
     """Run a sequence test case with multiple steps (fail-fast) in a process worker."""
@@ -46,16 +49,16 @@ def run_test_in_process(test_index: int, case_data: Dict[str, Any], workspace: s
     }
 
     command_preview = f"{case['command']} {' '.join(case['args'])}".strip()
-    print(f"  [Process Worker {test_index}] Executing command: {command_preview}")
+    logger.info("  [Process Worker %d] Executing command: %s", test_index, command_preview)
 
     result = execute_single_test_case(case, workspace)
 
     if result["output"].strip():
-        print(f"  [Process Worker {test_index}] Command output for {case['name']}:")
+        logger.debug("  [Process Worker %d] Command output for %s:", test_index, case["name"])
         for line in result["output"].splitlines():
-            print(f"    {line}")
+            logger.debug("    %s", line)
 
     if result["status"] != "passed" and result.get("message"):
-        print(f"  [Process Worker {test_index}] Error for {case['name']}: {result['message']}")
+        logger.error("  [Process Worker %d] Error for %s: %s", test_index, case["name"], result["message"])
 
     return result 

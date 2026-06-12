@@ -124,6 +124,12 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 
 ## 更新日志
 
+### 0.7.0
+
+- **统一日志系统**：所有诊断输出（执行器、runner、scheduler、setup）统一走 Python 标准 `logging` 模块，命名空间 `cli_test_framework`。作为库引用时可通过 `logging.getLogger("cli_test_framework").setLevel(logging.WARNING)` 完全静默。移除了原有的 `print()` + `_print_lock` ad-hoc 模式 — `logging` 模块天然线程安全。
+- **默认 Handler**：首次导入时自动安装 `StreamHandler`（INFO 级别），CLI 行为不变。通过 `--verbose` / `--debug` 启用 DEBUG 级别输出。
+- **公开 API**：`get_logger(name)` 通过 `cli_test_framework.get_logger` 暴露，供扩展开发统一使用。
+
 ### 0.6.0
 
 - **Golden File 断言**：`compare_files` 成为测试 `expected` 中的一等断言，支持在测试定义中直接声明输出文件与基准文件的对比（带容差和全部比较器参数）。`file_comparator` 子系统现已集成到断言管线中，形成从命令执行到产物验证的完整闭环。

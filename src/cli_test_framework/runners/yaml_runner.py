@@ -1,4 +1,5 @@
 import sys
+import logging
 from typing import Optional, Dict, Any
 
 from ..core.base_runner import BaseRunner
@@ -7,6 +8,8 @@ from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
 from ..utils.path_resolver import PathResolver
+
+logger = logging.getLogger("cli_test_framework.runners.yaml_runner")
 
 class YAMLRunner(BaseRunner):
     def __init__(self, config_file="test_cases.yaml", workspace: Optional[str] = None,
@@ -27,7 +30,7 @@ class YAMLRunner(BaseRunner):
             self.load_setup_from_config(config)
             self.test_cases = parse_test_cases(config, self.workspace, self.path_resolver)
 
-            print(f"Successfully loaded {len(self.test_cases)} test cases")
+            logger.info("Successfully loaded %d test cases", len(self.test_cases))
         except Exception as e:
             sys.exit(f"Failed to load configuration file: {str(e)}")
 
@@ -47,16 +50,16 @@ class YAMLRunner(BaseRunner):
         }
 
         command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
-        print(f"  Executing command: {command_preview}")
+        logger.info("  Executing command: %s", command_preview)
 
         result = execute_single_test_case(case_data, str(self.workspace) if self.workspace else None)
 
         if result["output"].strip():
-            print("  Command output:")
+            logger.debug("  Command output:")
             for line in result["output"].splitlines():
-                print(f"    {line}")
+                logger.debug("    %s", line)
 
         if result["status"] != "passed" and result.get("message"):
-            print(f"  Error: {result['message']}")
+            logger.error("  Error: %s", result["message"])
 
         return result

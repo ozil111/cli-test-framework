@@ -10,12 +10,15 @@ Backward-compatible: the runner classes still expose ``load_test_cases()`` and
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .test_case import TestCase, TestCaseStep
 from .execution import execute_single_test_case
 from ..utils.path_resolver import resolve_paths
+
+logger = logging.getLogger("cli_test_framework.core.config_loader")
 
 
 # ---------------------------------------------------------------------------
@@ -142,20 +145,14 @@ def execute_sequence(
     print_prefix:
         Optional prefix printed before every message (e.g. ``"[Worker]"``).
     lock:
-        Optional ``threading.Lock`` used to serialise console output.
-        When *None*, ``print()`` is called without locking.
+        Deprecated; retained for backward compatibility with callers that
+        still pass a ``threading.Lock``.  Logging is natively thread-safe,
+        so the lock is no longer used.
     executor:
         Optional override for ``execute_single_test_case``.
         Defaults to the canonical import; callers that need monkeypatch
         support (e.g. process_worker) should pass their own reference.
     """
-    def _emit(msg: str) -> None:
-        if lock is not None:
-            with lock:
-                print(msg)
-        else:
-            print(msg)
-
     if executor is None:
         executor = execute_single_test_case
 
@@ -182,16 +179,14 @@ def execute_sequence(
         command_preview = (
             f"{step_case['command']} {' '.join(step_case['args'])}".strip()
         )
-        _emit(
-            f"  {prefix}Executing step {i+1}/{len(steps)}: {command_preview}"
-        )
+        logger.info("  %sExecuting step %d/%d: %s", prefix, i+1, len(steps), command_preview)
 
         result = executor(step_case, workspace)
 
         if result["output"].strip():
-            _emit(f"  {prefix}Command output for {step_name}:")
+            logger.debug("  %sCommand output for %s:", prefix, step_name)
             for line in result["output"].splitlines():
-                _emit(f"    {line}")
+                logger.debug("    %s", line)
 
         combined_output += result["output"]
         total_duration += result["duration"]
@@ -201,9 +196,7 @@ def execute_sequence(
             all_passed = False
             failed_step = i + 1
             if result.get("message"):
-                _emit(
-                    f"  {prefix}Error at step {i+1}: {result['message']}"
-                )
+                logger.error("  %sError at step %d: %s", prefix, i+1, result["message"])
             break
 
     status = "passed" if all_passed else last_result["status"]

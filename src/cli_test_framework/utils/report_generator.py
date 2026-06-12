@@ -1,3 +1,8 @@
+import logging
+
+logger = logging.getLogger("cli_test_framework.utils.report_generator")
+
+
 class ReportGenerator:
     def __init__(self, results: dict, file_path: str):
         self.results = results
@@ -68,4 +73,4 @@ class ReportGenerator:
 
     def print_report(self) -> None:
         report = self.generate_report()
-        print(report)
+        logger.info(report)

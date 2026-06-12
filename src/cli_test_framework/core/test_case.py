@@ -24,8 +24,6 @@ class TestCase:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert test case to dictionary format"""
-        print("Convert test case to dictionary format")
-        print(self.command)
         result = {
             "name": self.name,
             "command": self.command,

@@ -11,7 +11,10 @@
 import os
 import importlib
 import pkgutil
+import logging
 from pathlib import Path
+
+logger = logging.getLogger("cli_test_framework.file_comparator.factory")
 
 class ComparatorFactory:
     """
@@ -118,7 +121,7 @@ class ComparatorFactory:
                             type_name = attr_name.lower().replace('comparator', '')
                             ComparatorFactory.register_comparator(type_name, attr)
                 except ImportError as e:
-                    print(f"Failed to import comparator module {module_info.name}: {e}")
+                    logger.warning("Failed to import comparator module %s: %s", module_info.name, e)
 
         ComparatorFactory._initialized = True
 

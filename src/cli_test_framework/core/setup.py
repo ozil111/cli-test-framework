@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional
+import logging
 import os
+
+logger = logging.getLogger("cli_test_framework.core.setup")
 
 
 class BaseSetup(ABC):
@@ -51,7 +54,7 @@ class EnvironmentSetup(BaseSetup):
         if not env_vars:
             return
             
-        print(f"Setting up environment variables...")
+        logger.info("Setting up environment variables...")
         
         for key, value in env_vars.items():
             # 保存原始值
@@ -62,25 +65,25 @@ class EnvironmentSetup(BaseSetup):
             
             # 设置新值
             os.environ[key] = str(value)
-            print(f"  {key} = {value}")
+            logger.info("  %s = %s", key, value)
     
     def teardown(self) -> None:
         """恢复环境变量"""
         if not self._original_env and not self._added_env:
             return
             
-        print(f"Restoring environment variables...")
+        logger.info("Restoring environment variables...")
         
         # 恢复原始值
         for key, value in self._original_env.items():
             os.environ[key] = value
-            print(f"  Restored {key}")
+            logger.info("  Restored %s", key)
         
         # 删除新添加的环境变量
         for key in self._added_env:
             if key in os.environ:
                 del os.environ[key]
-                print(f"  Removed {key}")
+                logger.info("  Removed %s", key)
         
         # 清空记录
         self._original_env.clear()
@@ -102,16 +105,16 @@ class SetupManager:
         if not self.setups:
             return
             
-        print("\n" + "=" * 50)
-        print("Executing setup tasks...")
-        print("=" * 50)
+        logger.info("=" * 50)
+        logger.info("Executing setup tasks...")
+        logger.info("=" * 50)
         
         for setup in self.setups:
             try:
-                print(f"\nRunning setup: {setup.get_name()}")
+                logger.info("Running setup: %s", setup.get_name())
                 setup.setup()
             except Exception as e:
-                print(f"Error in setup {setup.get_name()}: {str(e)}")
+                logger.error("Error in setup %s: %s", setup.get_name(), e)
                 raise
     
     def teardown_all(self) -> None:
@@ -119,16 +122,16 @@ class SetupManager:
         if not self.setups:
             return
             
-        print("\n" + "=" * 50)
-        print("Executing teardown tasks...")
-        print("=" * 50)
+        logger.info("=" * 50)
+        logger.info("Executing teardown tasks...")
+        logger.info("=" * 50)
         
         # 逆序执行teardown
         for setup in reversed(self.setups):
             try:
-                print(f"\nRunning teardown: {setup.get_name()}")
+                logger.info("Running teardown: %s", setup.get_name())
                 setup.teardown()
             except Exception as e:
-                print(f"Error in teardown {setup.get_name()}: {str(e)}")
+                logger.error("Error in teardown %s: %s", setup.get_name(), e)
                 # teardown错误不应该阻止其他teardown的执行
                 continue 

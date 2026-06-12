@@ -47,7 +47,7 @@ def test_save_report_writes_utf8_file(tmp_path):
     assert "Total Tests: 1" in report_path.read_text(encoding="utf-8")
 
 
-def test_print_report_outputs_generated_report(capsys):
+def test_print_report_outputs_generated_report(caplog):
     generator = ReportGenerator(
         {"total": 0, "passed": 0, "failed": 0, "details": []},
         "unused.txt",
@@ -55,5 +55,5 @@ def test_print_report_outputs_generated_report(capsys):
 
     generator.print_report()
 
-    assert "Test Results Summary" in capsys.readouterr().out
+    assert "Test Results Summary" in caplog.text
 

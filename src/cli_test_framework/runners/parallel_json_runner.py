@@ -1,7 +1,7 @@
 import json
 import sys
-import threading
 import os
+import logging
 from typing import Optional, Dict, Any
 
 from ..core.parallel_runner import ParallelRunner, AtomicSemaphore
@@ -10,6 +10,8 @@ from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
 from ..utils.path_resolver import PathResolver
+
+logger = logging.getLogger("cli_test_framework.runners.parallel_json_runner")
 
 class ParallelJSONRunner(ParallelRunner):
     """并行JSON测试运行器"""
@@ -46,12 +48,12 @@ class ParallelJSONRunner(ParallelRunner):
                          history_dir, regression_threshold)
         # Backward-compatible attribute for potential external patches/tests
         self.path_resolver = PathResolver(self.workspace)
-        self._print_lock = threading.Lock()  # 用于控制输出顺序
         
         # 3. 初始化资源池 (AtomicSemaphore，避免逐个 acquire 的部分占有死锁)
         self.cpu_semaphore = AtomicSemaphore(self.safe_capacity) if execution_mode == "thread" else None
         
-        print(f"✅ [Resource Manager] Detected {self.total_physical} CPUs. Pool size set to {self.safe_capacity}.")
+        logger.info("✅ [Resource Manager] Detected %d CPUs. Pool size set to %d.",
+                    self.total_physical, self.safe_capacity)
 
     def _assign_relative_cpu_cores(self) -> None:
         """
@@ -105,7 +107,7 @@ class ParallelJSONRunner(ParallelRunner):
             self.load_setup_from_config(config)
             self.test_cases = parse_test_cases(config, self.workspace, self.path_resolver)
 
-            print(f"Successfully loaded {len(self.test_cases)} test cases")
+            logger.info("Successfully loaded %d test cases", len(self.test_cases))
 
             # Heuristic scheduling: longest estimated time first to improve parallel utilization.
             if self.test_cases:
@@ -122,12 +124,12 @@ class ParallelJSONRunner(ParallelRunner):
                         return history_cases[case.name]["avg_duration"]
                     return (case.resources or {}).get("estimated_time", 0)
 
-                print("Optimizing execution order based on estimated duration...")
+                logger.info("Optimizing execution order based on estimated duration...")
                 self.test_cases.sort(key=get_estimated_time, reverse=True)
                 top_case = self.test_cases[0]
                 top_est = get_estimated_time(top_case)
                 source = "history" if top_case.name in history_cases else "config"
-                print(f"Heaviest task: {top_case.name} (Est: {top_est:.2f}s, source: {source})")
+                logger.info("Heaviest task: %s (Est: %.2fs, source: %s)", top_case.name, top_est, source)
 
             # Relative CPU allocation for cases without explicit cpu_cores
             self._assign_relative_cpu_cores()
@@ -135,13 +137,12 @@ class ParallelJSONRunner(ParallelRunner):
             sys.exit(f"Failed to load configuration file: {str(e)}")
 
     def _run_sequence(self, case: TestCase) -> Dict[str, Any]:
-        """Run a sequence test case with multiple steps (fail-fast, thread-safe printing)."""
+        """Run a sequence test case with multiple steps (fail-fast)."""
         return execute_sequence(
             case_name=case.name,
             steps=case.steps,
             workspace=str(self.workspace) if self.workspace else None,
             print_prefix="[Worker]",
-            lock=self._print_lock,
         )
 
     def run_single_test(self, case: TestCase) -> Dict[str, Any]:
@@ -183,8 +184,7 @@ class ParallelJSONRunner(ParallelRunner):
                 "NPROC": str(required_cores),
             }
 
-            with self._print_lock:
-                print(f"  [Scheduler] Task '{case.name}' acquired {tokens_acquired} cores. Running...")
+            logger.info("  [Scheduler] Task '%s' acquired %d cores. Running...", case.name, tokens_acquired)
 
         # 4. 执行测试（支持 sequence 和单命令两种模式）
         if case.steps:
@@ -202,9 +202,8 @@ class ParallelJSONRunner(ParallelRunner):
             }
 
             command_preview = f"{case_data['command']} {' '.join(case_data['args'])}".strip()
-            with self._print_lock:
-                if self.execution_mode != "thread" or self.cpu_semaphore is None:
-                    print(f"  [Worker] Executing command: {command_preview}")
+            if self.execution_mode != "thread" or self.cpu_semaphore is None:
+                logger.info("  [Worker] Executing command: %s", command_preview)
 
             # 执行测试 (传入 env)
             result = execute_single_test_case(
@@ -214,19 +213,16 @@ class ParallelJSONRunner(ParallelRunner):
             )
 
             if result["output"].strip():
-                with self._print_lock:
-                    print(f"  [Worker] Command output for {case.name}:")
-                    for line in result["output"].splitlines():
-                        print(f"    {line}")
+                logger.debug("  [Worker] Command output for %s:", case.name)
+                for line in result["output"].splitlines():
+                    logger.debug("    %s", line)
 
             if result["status"] != "passed" and result.get("message"):
-                with self._print_lock:
-                    print(f"  [Worker] Error for {case.name}: {result['message']}")
+                logger.error("  [Worker] Error for %s: %s", case.name, result["message"])
         
         # 5. 归还资源（一次性原子释放）
         if self.execution_mode == "thread" and self.cpu_semaphore is not None and tokens_acquired > 0:
             self.cpu_semaphore.release(tokens_acquired)
-            with self._print_lock:
-                print(f"  [Scheduler] Task '{case.name}' released {tokens_acquired} cores.")
+            logger.info("  [Scheduler] Task '%s' released %d cores.", case.name, tokens_acquired)
 
         return result 

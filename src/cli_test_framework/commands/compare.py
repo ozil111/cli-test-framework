@@ -16,18 +16,8 @@ from pathlib import Path
 from ..file_comparator.factory import ComparatorFactory
 from ..file_comparator.result import ComparisonResult
 
-def configure_logging():
-    """Configure logging settings for the application"""
-    logger = logging.getLogger("cli_test_framework.file_comparator")
-    logger.setLevel(logging.INFO)
-    
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    
-    return logger
+logger = logging.getLogger("cli_test_framework.commands.compare")
+
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -122,7 +112,7 @@ def run_comparison(args, logger=None):
         int: Exit code (0 if files are identical, 1 otherwise)
     """
     if logger is None:
-        logger = configure_logging()
+        logger = logging.getLogger("cli_test_framework.commands.compare")
 
     if args.debug:
         logger.setLevel(logging.DEBUG)
@@ -207,11 +197,9 @@ def run_comparison(args, logger=None):
 
 def main():
     """Main entry point for the compare-files command"""
-    logger = configure_logging()
-
     try:
         args = parse_arguments()
-        exit_code = run_comparison(args, logger)
+        exit_code = run_comparison(args)
         sys.exit(exit_code)
 
     except ValueError as ve:
