@@ -9,6 +9,7 @@
 """
 
 import difflib
+import re
 from .base_comparator import BaseComparator
 from .result import Difference
 
@@ -110,6 +111,10 @@ class TextComparator(BaseComparator):
         line_diffs = []
         for line in diff[2:]:  # Skip the first two header lines
             if line.startswith('@@'):
+                # Parse hunk header for real line numbers: @@ -start1,c1 +start2,c2 @@
+                match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
+                if match:
+                    line_diffs.append(('hunk', (int(match.group(1)), int(match.group(3)))))
                 continue
             elif line.startswith('-'):
                 line_diffs.append(('remove', line[1:]))
@@ -122,7 +127,12 @@ class TextComparator(BaseComparator):
         line_num1 = 0
         line_num2 = 0
         for i, (action, line) in enumerate(line_diffs):
-            if action == 'remove':
+            if action == 'hunk':
+                # Reset to real line numbers from the hunk header (convert 1-based to 0-based)
+                line_num1 = line[0] - 1
+                line_num2 = line[1] - 1
+                continue
+            elif action == 'remove':
                 # Look ahead for a corresponding 'add'
                 add_match = None
                 for j in range(i+1, min(i+5, len(line_diffs))):
