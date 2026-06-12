@@ -1,4 +1,5 @@
 import subprocess
+import signal
 import time
 import os
 import shlex
@@ -111,28 +112,41 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         current_env.update(env)
 
     try:
-        process = subprocess.run(
+        process = subprocess.Popen(
             cmd_list,
             cwd=workspace if workspace else None,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            check=False,
-            shell=False,
-            timeout=timeout_limit if timeout_limit is not None else None,
+            start_new_session=True,
             env=current_env,
         )
 
-        output = process.stdout + process.stderr
-        result["output"] = output
-        result["return_code"] = process.returncode
+        try:
+            stdout, stderr = process.communicate(timeout=timeout_limit)
+        except subprocess.TimeoutExpired:
+            # Kill the entire process group to avoid orphan processes
+            # (e.g. when the tested program forks and those children
+            # would otherwise outlive the timeout kill of the direct child).
+            try:
+                if os.name == 'posix':
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
+            except (ProcessLookupError, OSError):
+                pass  # process already exited
+            stdout, stderr = process.communicate()  # reap the process
+            result["status"] = "timeout"
+            result["message"] = f"Timeout reached! Killed after {timeout_limit} seconds."
+            result["output"] = (stdout or "") + (stderr or "")
+            result["return_code"] = None
+        else:
+            output = stdout + stderr
+            result["output"] = output
+            result["return_code"] = process.returncode
 
-        validate_result(case["expected"], result, workspace)
-        result["status"] = "passed"
-    except subprocess.TimeoutExpired as exc:
-        result["status"] = "timeout"
-        result["message"] = f"Timeout reached! Killed after {timeout_limit} seconds."
-        result["output"] = (exc.stdout or "") + (exc.stderr or "")
-        result["return_code"] = None
+            validate_result(case["expected"], result, workspace)
+            result["status"] = "passed"
     except AssertionError as exc:
         result["message"] = str(exc)
     except Exception as exc:
