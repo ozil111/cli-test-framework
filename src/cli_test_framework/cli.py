@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .runners import JSONRunner, ParallelJSONRunner, ParallelYAMLRunner, YAMLRunner
 from .utils.report_generator import ReportGenerator
+from .utils.junit_xml_writer import write_junit_xml
 
 logger = logging.getLogger("cli_test_framework.cli")
 
@@ -55,6 +56,8 @@ Examples:
                            help='Warn if a case runs N times slower than historical average (default: 1.5)')
     run_parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose output')
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    run_parser.add_argument('--junit-xml', dest='junit_xml',
+                           help='Write JUnit XML report to the specified file path')
 
     # ---- Compare command ----
     compare_parser = subparsers.add_parser('compare', help='Compare two files')
@@ -201,6 +204,13 @@ def run_tests(args):
             else:
                 report_gen = ReportGenerator(results, '')
                 report_gen.print_report()
+
+        # --- JUnit XML output (supplementary, works alongside any --output-format) ---
+        junit_xml_path = getattr(args, 'junit_xml', None)
+        if junit_xml_path and hasattr(runner, 'results'):
+            suite_name = config_file.stem
+            write_junit_xml(runner.results, junit_xml_path, suite_name=suite_name)
+            logger.info("JUnit XML report written to: %s", junit_xml_path)
 
         return success
 

@@ -21,6 +21,7 @@ CLI Test Framework was built for that workflow.
 - **Setup Module** — Auto-configure environment variables before tests, auto-cleanup after
 - **File Comparison** — Text / JSON / CSV / XML / HDF5 / Binary, with CLI and embedded assertion support
 - **Filtered Execution** — Run specific test cases by name
+- **JUnit XML Output** — `--junit-xml` for GitLab CI / Jenkins / CircleCI test report panels
 
 ## Quick Start
 
@@ -108,6 +109,21 @@ Multiple files and mixed assertion types coexist naturally:
 cli-test run test_cases.json --parallel --workers 4
 ```
 
+### JUnit XML (CI Integration)
+
+```bash
+cli-test run test_cases.json --junit-xml report.xml
+```
+
+In GitLab CI:
+
+```yaml
+# .gitlab-ci.yml
+artifacts:
+  reports:
+    junit: report.xml
+```
+
 ### Python API
 
 ```python
@@ -131,6 +147,10 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 📖 **Full Documentation**: [docs/user_manual.md](docs/user_manual_en.md)
 
 ## Changelog
+
+### 0.8.0
+
+- **JUnit XML output**: New `--junit-xml <filepath>` CLI option writes JUnit-format XML reports that integrate directly with GitLab CI, Jenkins, CircleCI, and other CI tools. Supports `passed` / `failed` / `timeout` / `error` status mapping. Zero extra dependencies — built with `xml.etree.ElementTree`.
 
 ### 0.7.0
 

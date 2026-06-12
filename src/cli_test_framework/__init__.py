@@ -17,7 +17,7 @@ suppress output entirely::
     logging.getLogger("cli_test_framework").handlers.clear()
 """
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 __author__ = "Xiaotong Wang"
 __email__ = "xiaotongwang98@gmail.com"
 
@@ -29,10 +29,11 @@ from .core.test_case import TestCase
 from .core.assertions import Assertions
 from .core.setup import BaseSetup, EnvironmentSetup, SetupManager
 from .logging_config import get_logger
+from .utils.junit_xml_writer import write_junit_xml
 
 __all__ = [
     'JSONRunner',
-    'ParallelJSONRunner', 
+    'ParallelJSONRunner',
     'YAMLRunner',
     'TestCase',
     'Assertions',
@@ -40,4 +41,5 @@ __all__ = [
     'EnvironmentSetup',
     'SetupManager',
     'get_logger',
+    'write_junit_xml',
 ] 

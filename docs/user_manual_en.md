@@ -117,6 +117,9 @@ cli-test run test_cases.json --verbose
 # Debug mode
 cli-test run test_cases.json --debug
 
+# JUnit XML output for CI
+cli-test run test_cases.json --junit-xml report.xml
+
 # Output format
 cli-test run test_cases.json --output-format json|html|text
 ```
@@ -161,6 +164,80 @@ runner.results["failed"]
 for detail in runner.results["details"]:
     print(detail["name"], detail["status"], detail.get("message", ""))
 ```
+
+### JUnit XML Output (CI Integration)
+
+Generate JUnit-format XML reports for CI tools like GitLab CI, Jenkins, or CircleCI:
+
+```bash
+cli-test run test_cases.json --junit-xml report.xml
+```
+
+This produces a standard JUnit XML file that can be consumed by CI report panels:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="test_cases" tests="3" failures="1" errors="1" time="12.345">
+  <testcase name="test_ok" classname="test_cases" time="0.123" />
+  <testcase name="test_fail" classname="test_cases" time="0.456">
+    <failure message="expected 'hello'" type="AssertionError">...</failure>
+  </testcase>
+  <testcase name="test_timeout" classname="test_cases" time="10.0">
+    <error message="Timeout reached" type="TimeoutExpired">...</error>
+  </testcase>
+</testsuite>
+```
+
+**CI configuration examples:**
+
+**GitLab CI** (`.gitlab-ci.yml`):
+```yaml
+test:
+  script:
+    - cli-test run test_cases.json --junit-xml report.xml
+  artifacts:
+    reports:
+      junit: report.xml
+```
+
+**Jenkins Pipeline**:
+```groovy
+stage('Test') {
+    steps {
+        sh 'cli-test run test_cases.json --junit-xml report.xml'
+        junit 'report.xml'
+    }
+}
+```
+
+**GitHub Actions**:
+```yaml
+- name: Run tests
+  run: cli-test run test_cases.json --junit-xml report.xml
+- name: Publish test results
+  uses: dorny/test-reporter@v1
+  with:
+    name: CLI Tests
+    path: report.xml
+    reporter: java-junit
+```
+
+**Python API**:
+```python
+from cli_test_framework import write_junit_xml
+
+runner = JSONRunner(config_file="test_cases.json")
+runner.run_tests()
+write_junit_xml(runner.results, "report.xml", suite_name="my_tests")
+```
+
+Status mapping:
+| Test status | JUnit element | CI interpretation |
+|---|---|---|
+| `passed` | (no child) | Passed |
+| `failed` (assertion) | `<failure>` | Failure |
+| `failed` (execution error) | `<error>` | Error |
+| `timeout` | `<error>` | Error |
 
 ## Setup Module
 
