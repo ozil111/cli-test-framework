@@ -7,14 +7,13 @@ with support for parallel execution and advanced file comparison capabilities.
 Logging
 -------
 All diagnostic and status messages go through Python's standard ``logging``
-module under the ``cli_test_framework`` namespace.  A ``StreamHandler`` is
-installed automatically at ``INFO`` level on first import.  Library users can
-suppress output entirely::
+module under the ``cli_test_framework`` namespace.  By default only a
+``NullHandler`` is attached — no output is produced on import.  The CLI
+entry point calls ``setup_console_logging()`` to enable stderr output at
+runtime.  Library users can enable console logging explicitly::
 
-    import logging
-    logging.getLogger("cli_test_framework").setLevel(logging.WARNING)
-    # or remove the handler:
-    logging.getLogger("cli_test_framework").handlers.clear()
+    from cli_test_framework.logging_config import setup_console_logging
+    setup_console_logging(level=logging.DEBUG)
 """
 
 __version__ = "0.8.0"
@@ -28,7 +27,7 @@ from .runners.yaml_runner import YAMLRunner
 from .core.test_case import TestCase
 from .core.assertions import Assertions
 from .core.setup import BaseSetup, EnvironmentSetup, SetupManager
-from .logging_config import get_logger
+from .logging_config import get_logger, setup_console_logging
 from .utils.junit_xml_writer import write_junit_xml
 
 __all__ = [
@@ -41,5 +40,6 @@ __all__ = [
     'EnvironmentSetup',
     'SetupManager',
     'get_logger',
+    'setup_console_logging',
     'write_junit_xml',
 ] 

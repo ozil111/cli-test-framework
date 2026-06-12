@@ -14,6 +14,7 @@ import os
 import logging
 from pathlib import Path
 
+from .logging_config import setup_console_logging
 from .runners import JSONRunner, ParallelJSONRunner, ParallelYAMLRunner, YAMLRunner
 from .utils.report_generator import ReportGenerator
 from .utils.junit_xml_writer import write_junit_xml
@@ -262,16 +263,11 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    # Configure logging level based on CLI flags
-    pkg_logger = logging.getLogger("cli_test_framework")
-    if hasattr(args, 'debug') and args.debug:
-        pkg_logger.setLevel(logging.DEBUG)
-        for h in pkg_logger.handlers:
-            h.setLevel(logging.DEBUG)
-    elif hasattr(args, 'verbose') and args.verbose:
-        pkg_logger.setLevel(logging.DEBUG)
-        for h in pkg_logger.handlers:
-            h.setLevel(logging.DEBUG)
+    # Activate console logging (stderr) and honour verbosity flags.
+    level = logging.DEBUG if (
+        getattr(args, 'debug', False) or getattr(args, 'verbose', False)
+    ) else logging.INFO
+    setup_console_logging(level=level)
 
     if args.command == 'run':
         success = run_tests(args)
