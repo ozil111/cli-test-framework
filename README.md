@@ -4,6 +4,14 @@ A lightweight automated testing framework for command-line applications. Define 
 
 Particularly suited for scientific computing — deep HDF5 support with regex table matching, data filtering, and tolerance-based comparison, making simulation result verification effortless.
 
+## Why this exists
+
+This project was created from a real need: regression testing finite-element software.
+
+In solver-style projects, checking the exit code is not enough. A test often needs to run multiple commands, generate numerical result files, compare HDF5/CSV outputs with tolerances, and make sure old cases do not become slower over time.
+
+CLI Test Framework was built for that workflow.
+
 ## Highlights
 
 - **Parallel Execution** — Multi-thread / multi-process, 3-5x speedup
