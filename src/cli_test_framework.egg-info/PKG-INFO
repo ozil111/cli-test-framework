@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: cli-test-framework
-Version: 0.5.3
+Version: 0.5.4
 Summary: A powerful command line testing framework in Python with setup modules, parallel execution, and file comparison capabilities.
 Home-page: https://github.com/ozil111/cli-test-framework
 Author: Xiaotong Wang
@@ -18,10 +18,9 @@ Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: dukpy==0.5.0
-Requires-Dist: h5py<4.0.0,>=3.8.0; python_version < "3.12"
-Requires-Dist: h5py<4.0.0,>=3.10.0; python_version >= "3.12"
-Requires-Dist: numpy<2.0.0,>=1.21.0; python_version < "3.12"
-Requires-Dist: numpy<2.0.0,>=1.26.0; python_version >= "3.12"
+Requires-Dist: h5py<4.0.0,>=3.11.0
+Requires-Dist: numpy>=1.21.0; python_version < "3.12"
+Requires-Dist: numpy>=1.26.0; python_version >= "3.12"
 Requires-Dist: setuptools>=75.8.0
 Requires-Dist: wheel>=0.45.1
 Dynamic: author
@@ -40,6 +39,14 @@ Dynamic: summary
 A lightweight automated testing framework for command-line applications. Define test cases in JSON/YAML, run all validations with a single command.
 
 Particularly suited for scientific computing — deep HDF5 support with regex table matching, data filtering, and tolerance-based comparison, making simulation result verification effortless.
+
+## Why this exists
+
+This project was created from a real need: regression testing finite-element software.
+
+In solver-style projects, checking the exit code is not enough. A test often needs to run multiple commands, generate numerical result files, compare HDF5/CSV outputs with tolerances, and make sure old cases do not become slower over time.
+
+CLI Test Framework was built for that workflow.
 
 ## Highlights
 
