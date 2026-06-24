@@ -27,7 +27,7 @@ def failed_result(name="case"):
     }
 
 
-def test_run_test_in_process_executes_single_case(capsys):
+def test_run_test_in_process_executes_single_case(caplog):
     case = {
         "name": "single",
         "command": "echo",
@@ -41,10 +41,10 @@ def test_run_test_in_process_executes_single_case(capsys):
 
     execute.assert_called_once()
     assert result["status"] == "passed"
-    assert "Process Worker 1" in capsys.readouterr().out
+    assert "Process Worker 1" in caplog.text
 
 
-def test_run_test_in_process_prints_single_case_failure(capsys):
+def test_run_test_in_process_prints_single_case_failure(caplog):
     case = {
         "name": "single",
         "command": "tool",
@@ -57,7 +57,7 @@ def test_run_test_in_process_prints_single_case_failure(capsys):
         result = process_worker.run_test_in_process(2, case, "workspace")
 
     assert result["status"] == "failed"
-    assert "Error for single" in capsys.readouterr().out
+    assert "Error for single" in caplog.text
 
 
 def test_run_sequence_in_process_aggregates_successful_steps():

@@ -75,7 +75,7 @@ class TestJSONRunnerHistory:
         history = load_history(hist_dir)
         assert history["cases"]["my_case"]["run_count"] == 3
 
-    def test_regression_warning_printed(self, tmp_path, capsys):
+    def test_regression_warning_printed(self, tmp_path, caplog):
         """Simulate regression by writing a low avg_duration, then running."""
         config = _make_json_config(tmp_path, [_fast_case("slow_case")])
         hist_dir = str(tmp_path / "hist")
@@ -94,7 +94,7 @@ class TestJSONRunnerHistory:
             regression_threshold=1.5,
         )
         runner.run_tests()
-        output = capsys.readouterr().out
+        output = caplog.text
         assert "regressed" in output.lower() or "WARNING" in output
 
 
@@ -135,7 +135,7 @@ class TestParallelJSONRunnerHistory:
         history = load_history(hist_dir)
         assert "p_case" in history["cases"]
 
-    def test_smart_scheduling_uses_history(self, tmp_path, capsys):
+    def test_smart_scheduling_uses_history(self, tmp_path, caplog):
         """Verify that ParallelJSONRunner uses history data for scheduling."""
         cases = [
             {
@@ -172,5 +172,5 @@ class TestParallelJSONRunnerHistory:
         )
         runner.load_test_cases()
         # After loading, cases should be sorted by history avg (heavy first)
-        output = capsys.readouterr().out
+        output = caplog.text
         assert "history" in output.lower() or "Heaviest" in output

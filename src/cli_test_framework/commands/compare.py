@@ -16,18 +16,8 @@ from pathlib import Path
 from ..file_comparator.factory import ComparatorFactory
 from ..file_comparator.result import ComparisonResult
 
-def configure_logging():
-    """Configure logging settings for the application"""
-    logger = logging.getLogger("cli_test_framework.file_comparator")
-    logger.setLevel(logging.INFO)
-    
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
-    
-    return logger
+logger = logging.getLogger("cli_test_framework.commands.compare")
+
 
 def parse_arguments():
     """Parse command line arguments"""
@@ -112,92 +102,105 @@ def format_result(result, output_format):
     else:
         return str(result)
 
+def run_comparison(args, logger=None):
+    """Execute file comparison from a parsed arguments namespace.
+
+    This function can be called from both the standalone compare-files entry point
+    and the cli-test compare subcommand.
+
+    Returns:
+        int: Exit code (0 if files are identical, 1 otherwise)
+    """
+    if logger is None:
+        logger = logging.getLogger("cli_test_framework.commands.compare")
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug mode enabled")
+
+    # Adjust for 0-based indexing
+    start_line = max(0, args.start_line - 1)
+    end_line = None if args.end_line is None else max(0, args.end_line - 1)
+    start_column = max(0, args.start_column - 1)
+    end_column = None if args.end_column is None else max(0, args.end_column - 1)
+
+    # Resolve file paths
+    file1_path = Path(args.file1).resolve()
+    file2_path = Path(args.file2).resolve()
+
+    if not file1_path.exists():
+        raise ValueError(f"File not found: {file1_path}")
+    if not file2_path.exists():
+        raise ValueError(f"File not found: {file2_path}")
+
+    # Determine file type
+    file_type = args.file_type
+    if file_type == "auto":
+        file_type = detect_file_type(file1_path)
+        logger.info(f"Auto-detected file type: {file_type}")
+
+    # Prepare comparator kwargs
+    comparator_kwargs = {
+        "encoding": args.encoding,
+        "chunk_size": args.chunk_size,
+        "verbose": args.verbose or args.debug,
+        "num_threads": args.num_threads
+    }
+    
+    # Add file type specific arguments
+    if file_type == "json":
+        comparator_kwargs["compare_mode"] = args.json_compare_mode
+        if args.json_key_field:
+            key_fields = [field.strip() for field in args.json_key_field.split(',')]
+            comparator_kwargs["key_field"] = key_fields[0] if len(key_fields) == 1 else key_fields
+    
+    if file_type == "csv":
+        comparator_kwargs["rtol"] = args.csv_rtol
+        comparator_kwargs["atol"] = args.csv_atol
+        comparator_kwargs["delimiter"] = args.csv_delimiter
+        comparator_kwargs["quotechar"] = args.csv_quotechar
+
+    if file_type == "h5":
+        if args.h5_table:
+            tables = [table.strip() for table in args.h5_table.split(',')]
+            comparator_kwargs["tables"] = tables
+        if args.h5_table_regex:
+            comparator_kwargs["table_regex"] = args.h5_table_regex
+        comparator_kwargs["structure_only"] = args.h5_structure_only
+        comparator_kwargs["show_content_diff"] = args.h5_show_content_diff
+        comparator_kwargs["rtol"] = args.h5_rtol
+        comparator_kwargs["atol"] = args.h5_atol
+        if args.h5_data_filter:
+            comparator_kwargs["data_filter"] = args.h5_data_filter
+        comparator_kwargs["expand_path"] = args.h5_expand_path
+    
+    if file_type == "binary":
+        comparator_kwargs["similarity"] = args.similarity
+
+    # Create comparator and perform comparison
+    comparator = ComparatorFactory.create_comparator(file_type, **comparator_kwargs)
+    result = comparator.compare_files(
+        file1_path,
+        file2_path,
+        start_line,
+        end_line,
+        start_column,
+        end_column
+    )
+
+    # Output result
+    output = format_result(result, args.output_format)
+    print(output)
+
+    return 0 if result.identical else 1
+
+
 def main():
     """Main entry point for the compare-files command"""
-    logger = configure_logging()
-
     try:
         args = parse_arguments()
-        
-        if args.debug:
-            logger.setLevel(logging.DEBUG)
-            logger.debug("Debug mode enabled")
-
-        # Adjust for 0-based indexing
-        start_line = max(0, args.start_line - 1)
-        end_line = None if args.end_line is None else max(0, args.end_line - 1)
-        start_column = max(0, args.start_column - 1)
-        end_column = None if args.end_column is None else max(0, args.end_column - 1)
-
-        # Resolve file paths
-        file1_path = Path(args.file1).resolve()
-        file2_path = Path(args.file2).resolve()
-
-        if not file1_path.exists():
-            raise ValueError(f"File not found: {file1_path}")
-        if not file2_path.exists():
-            raise ValueError(f"File not found: {file2_path}")
-
-        # Determine file type
-        file_type = args.file_type
-        if file_type == "auto":
-            file_type = detect_file_type(file1_path)
-            logger.info(f"Auto-detected file type: {file_type}")
-
-        # Prepare comparator kwargs
-        comparator_kwargs = {
-            "encoding": args.encoding,
-            "chunk_size": args.chunk_size,
-            "verbose": args.verbose or args.debug,
-            "num_threads": args.num_threads
-        }
-        
-        # Add file type specific arguments
-        if file_type == "json":
-            comparator_kwargs["compare_mode"] = args.json_compare_mode
-            if args.json_key_field:
-                key_fields = [field.strip() for field in args.json_key_field.split(',')]
-                comparator_kwargs["key_field"] = key_fields[0] if len(key_fields) == 1 else key_fields
-        
-        if file_type == "csv":
-            comparator_kwargs["rtol"] = args.csv_rtol
-            comparator_kwargs["atol"] = args.csv_atol
-            comparator_kwargs["delimiter"] = args.csv_delimiter
-            comparator_kwargs["quotechar"] = args.csv_quotechar
-
-        if file_type == "h5":
-            if args.h5_table:
-                tables = [table.strip() for table in args.h5_table.split(',')]
-                comparator_kwargs["tables"] = tables
-            if args.h5_table_regex:
-                comparator_kwargs["table_regex"] = args.h5_table_regex
-            comparator_kwargs["structure_only"] = args.h5_structure_only
-            comparator_kwargs["show_content_diff"] = args.h5_show_content_diff
-            comparator_kwargs["rtol"] = args.h5_rtol
-            comparator_kwargs["atol"] = args.h5_atol
-            if args.h5_data_filter:
-                comparator_kwargs["data_filter"] = args.h5_data_filter
-            comparator_kwargs["expand_path"] = args.h5_expand_path
-        
-        if file_type == "binary":
-            comparator_kwargs["similarity"] = args.similarity
-
-        # Create comparator and perform comparison
-        comparator = ComparatorFactory.create_comparator(file_type, **comparator_kwargs)
-        result = comparator.compare_files(
-            file1_path,
-            file2_path,
-            start_line,
-            end_line,
-            start_column,
-            end_column
-        )
-
-        # Output result
-        output = format_result(result, args.output_format)
-        print(output)
-
-        sys.exit(0 if result.identical else 1)
+        exit_code = run_comparison(args)
+        sys.exit(exit_code)
 
     except ValueError as ve:
         logger.error(f"ValueError: {ve}")
@@ -206,5 +209,6 @@ def main():
         logger.exception(f"An unexpected error occurred")
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    main() 
+    main()

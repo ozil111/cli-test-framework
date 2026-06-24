@@ -39,24 +39,24 @@ def make_args(config_file, **overrides):
     return Namespace(**values)
 
 
-def test_run_tests_rejects_missing_config(capsys):
+def test_run_tests_rejects_missing_config(caplog):
     success = cli.run_tests(make_args("missing.json"))
 
     assert not success
-    assert "Configuration file not found" in capsys.readouterr().out
+    assert "Configuration file not found" in caplog.text
 
 
-def test_run_tests_rejects_unsupported_config_format(tmp_path, capsys):
+def test_run_tests_rejects_unsupported_config_format(tmp_path, caplog):
     config = tmp_path / "cases.toml"
     config.write_text("", encoding="utf-8")
 
     success = cli.run_tests(make_args(config))
 
     assert not success
-    assert "Unsupported configuration file format" in capsys.readouterr().out
+    assert "Unsupported configuration file format" in caplog.text
 
 
-def test_run_tests_uses_json_runner_and_prints_totals(tmp_path, monkeypatch, capsys):
+def test_run_tests_uses_json_runner_and_prints_totals(tmp_path, monkeypatch, caplog):
     config = tmp_path / "cases.json"
     config.write_text('{"test_cases": []}', encoding="utf-8")
 
@@ -68,11 +68,12 @@ def test_run_tests_uses_json_runner_and_prints_totals(tmp_path, monkeypatch, cap
 
     success = cli.run_tests(make_args(config, verbose=True, test_case=["ok"]))
 
-    output = capsys.readouterr().out
+    log_text = caplog.text
     assert success
-    assert "Total tests: 2" in output
-    assert "Passed: 1" in output
-    assert "bad: failed" in output
+    assert "Total Tests: 2" in log_text
+    assert "Passed: 1" in log_text
+    assert "bad" in log_text
+    assert "boom" in log_text
 
 
 def test_run_tests_uses_parallel_runner(tmp_path, monkeypatch):

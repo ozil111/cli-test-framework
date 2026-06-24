@@ -7,6 +7,15 @@ class ExpectedResult(TypedDict, total=False):
     return_code: Optional[int]
     output_contains: List[str]
     output_matches: Optional[str]
+    compare_files: List[Dict[str, Any]]
+    """List of file comparison specs.
+    Each spec is a dict with:
+        actual   (str): path to the file produced by the test command
+        baseline (str): path to the golden/reference file
+        type     (str, optional): comparator type (e.g. 'h5','json','csv','xml','text','binary')
+                                  auto-detected from extension if omitted
+        Additional kwargs are forwarded to the comparator (e.g. rtol, atol, encoding, ...)
+    """
 
 
 class ResourceRequirements(TypedDict, total=False):

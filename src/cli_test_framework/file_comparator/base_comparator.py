@@ -20,7 +20,7 @@ class BaseComparator(ABC):
              It provides basic file comparison operations and logging capabilities.
     """
     
-    def __init__(self, encoding="utf-8", chunk_size=8192, verbose=False):
+    def __init__(self, encoding="utf-8", chunk_size=8192, verbose=False, **kwargs):
         """
         @brief Initialize the base comparator
         @param encoding str: File encoding to use (default: "utf-8")
