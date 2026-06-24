@@ -1,51 +1,25 @@
-from pathlib import Path
-from typing import List, Union
-import shlex
 import os
+import shlex
+from pathlib import Path
+from typing import List, Tuple, Union
 import shutil
-import subprocess
+
 
 WorkspaceLike = Union[str, Path]
+
+# Commands that are shell builtins (not real executables).
+# Recognised here so they pass through as-is rather than being treated
+# as workspace-relative paths.  Wrapping (cmd /d /c …) happens later
+# in execution._normalize_cmd_list.
+if os.name == 'nt':
+    _SHELL_BUILTINS = frozenset(['echo', 'dir', 'type', 'copy', 'del', 'ren',
+                                  'cd', 'md', 'rd', 'set', 'cls', 'move'])
+else:
+    _SHELL_BUILTINS = frozenset(['echo', 'cd', 'pwd', 'export', 'source'])
 
 
 def _as_workspace_path(workspace: WorkspaceLike) -> Path:
     return workspace if isinstance(workspace, Path) else Path(workspace)
-
-
-def _resolve_relative_part(part: str, workspace_path: Path) -> str:
-    """
-    带标识符的路径解析逻辑：
-    1. 检查标识符 'raw:' -> 如果存在，强行按原样返回（剥离标识符）
-    2. 跳过旗标 (- 开头)
-    3. 跳过纯数字
-    4. 启发式解析其他潜在路径
-    """
-    if part.startswith("raw:"):
-        return part[4:]
-
-    if part.startswith("-"):
-        return part
-
-    if part.isdigit():
-        return part
-
-    if "." in part or "/" in part or "\\" in part:
-        if not Path(part).is_absolute():
-            return str(workspace_path / part)
-
-    return part
-
-
-def resolve_paths(args: List[str], workspace: WorkspaceLike) -> List[str]:
-    """根据标识符或启发式规则解析参数列表中的路径"""
-    workspace_path = _as_workspace_path(workspace)
-    return [_resolve_relative_part(arg, workspace_path) for arg in args]
-
-
-def _shell_join(parts: List[str]) -> str:
-    if os.name == "nt":
-        return subprocess.list2cmdline(parts)
-    return shlex.join(parts)
 
 
 def resolve_command(command: str, workspace: WorkspaceLike) -> str:
@@ -53,7 +27,6 @@ def resolve_command(command: str, workspace: WorkspaceLike) -> str:
     Resolve command path:
     - absolute path: keep
     - available in PATH: keep
-    - known system command: keep
     - otherwise treat as relative to workspace
     """
     workspace_path = _as_workspace_path(workspace)
@@ -64,132 +37,64 @@ def resolve_command(command: str, workspace: WorkspaceLike) -> str:
     if shutil.which(command) is not None:
         return command
 
-    system_commands = {
-        'echo', 'ping', 'dir', 'ls', 'cat', 'grep', 'find', 'sort',
-        'head', 'tail', 'wc', 'curl', 'wget', 'git', 'python', 'node',
-        'npm', 'pip', 'java', 'javac', 'gcc', 'make', 'cmake', 'docker',
-        'kubectl', 'helm', 'terraform', 'ansible', 'ssh', 'scp', 'rsync'
-    }
-
-    if command in system_commands:
-        return command
-
     return str(workspace_path / command)
 
 
-def parse_command_string(command_string: str, workspace: WorkspaceLike) -> str:
-    """
-    Parse command string with smart handling of quoted paths and relative segments.
-    """
+def _looks_like_relative_path(arg: str) -> bool:
+    """Check if arg explicitly starts with a relative path prefix."""
+    return (arg.startswith("./") or arg.startswith(".\\") or
+            arg.startswith("../") or arg.startswith("..\\"))
+
+
+def resolve_paths(args: List[str], workspace: WorkspaceLike) -> List[str]:
+    """Resolve explicitly relative paths (starting with ./ or ../) against workspace."""
     workspace_path = _as_workspace_path(workspace)
-
-    if '"' in command_string or "'" in command_string:
-        try:
-            parts = shlex.split(command_string, posix=True)
-
-            if not parts:
-                return command_string
-
-            command_part = parts[0]
-            remaining_parts = parts[1:]
-
-            resolved_command = (
-                command_part
-                if Path(command_part).is_absolute()
-                else resolve_command(command_part, workspace_path)
-            )
-
-            resolved_parts = []
-            if "-c" in remaining_parts:
-                c_index = remaining_parts.index("-c")
-                before_c = remaining_parts[:c_index]
-                script_body = " ".join(remaining_parts[c_index + 1 :])
-                for part in before_c:
-                    resolved_parts.append(_resolve_relative_part(part, workspace_path))
-                resolved_parts.append("-c")
-                resolved_parts.append(script_body)
-            else:
-                for part in remaining_parts:
-                    resolved_parts.append(_resolve_relative_part(part, workspace_path))
-
-            return _shell_join([resolved_command, *resolved_parts])
-
-        except ValueError:
-            pass
-
-    if _starts_with_absolute_path(command_string):
-        return _parse_absolute_path_command(command_string, workspace_path)
-    else:
-        parts = command_string.split()
-        if not parts:
-            return command_string
-
-        if len(parts) == 1:
-            return resolve_command(parts[0], workspace_path)
+    resolved: List[str] = []
+    for arg in args:
+        if _looks_like_relative_path(arg):
+            resolved.append(str(workspace_path / arg))
         else:
-            command_part = parts[0]
-            remaining_parts = parts[1:]
-            resolved_command = resolve_command(command_part, workspace_path)
-
-            if "-c" in remaining_parts:
-                c_index = remaining_parts.index("-c")
-                before_c = remaining_parts[:c_index]
-                script_body = " ".join(remaining_parts[c_index + 1 :])
-                resolved_parts = [
-                    _resolve_relative_part(p, workspace_path) for p in before_c
-                ] + ["-c", script_body]
-            else:
-                resolved_parts = [
-                    _resolve_relative_part(p, workspace_path) for p in remaining_parts
-                ]
-
-            return _shell_join([resolved_command, *resolved_parts])
+            resolved.append(arg)
+    return resolved
 
 
-def _starts_with_absolute_path(command_string: str) -> bool:
-    """检查命令字符串是否以绝对路径开头"""
+def split_command(command_string: str, workspace: WorkspaceLike) -> Tuple[str, List[str]]:
+    """
+    Split a potentially multi-word command string into its executable and leading arguments.
+    Uses shlex to correctly handle quoted executables (e.g. ''"C:\\Program Files\\app.exe" -v'').
+
+    Example:
+        ''"C:\\Python\\python.exe" -c "print('hi')"'' -> ("C:\\Python\\python.exe", ["-c", "print('hi')"])
+        "python ./script.py"                           -> ("python", ["./script.py"])
+        "echo hello world"                             -> ("echo", ["hello", "world"])
+    """
+    s = command_string.strip()
+    if not s:
+        return "", []
+
+    # Use shlex to properly handle quoted segments.
+    # posix=False preserves Windows backslash-paths but leaves quotes intact.
+    # On Windows we strip quotes manually; on Unix posix=True strips them natively.
+    try:
+        parts = shlex.split(s, posix=(os.name != 'nt'))
+    except ValueError:
+        parts = s.split()
     if os.name == 'nt':
-        return (len(command_string) >= 3 and
-                command_string[1:3] == ':\\') or command_string.startswith('\\\\')
-    else:
-        return command_string.startswith('/')
+        parts = [p.strip('"') for p in parts]
 
+    cmd = parts[0]
+    remaining = parts[1:]
 
-def _parse_absolute_path_command(command_string: str, workspace: WorkspaceLike) -> str:
-    workspace_path = _as_workspace_path(workspace)
+    # Real executable: absolute path or found in PATH
+    if os.path.isabs(cmd) or shutil.which(cmd) is not None:
+        return cmd, remaining
 
-    if os.name == 'nt':
-        exe_extensions = ['.exe', '.bat', '.cmd', '.com']
+    # Shell builtin -> pass through as-is; wrapping happens at execution time
+    if cmd.lower() in _SHELL_BUILTINS:
+        return cmd, remaining
 
-        for ext in exe_extensions:
-            if ext in command_string:
-                ext_pos = command_string.find(ext)
-                if ext_pos != -1:
-                    command_end = ext_pos + len(ext)
-                    command_part = command_string[:command_end]
-                    remaining = command_string[command_end:].strip()
-
-                    if remaining:
-                        remaining_parts = remaining.split()
-                        resolved_parts = [
-                            _resolve_relative_part(p, workspace_path)
-                            for p in remaining_parts
-                        ]
-                        return _shell_join([command_part, *resolved_parts])
-                    else:
-                        return command_part
-
-    parts = command_string.split()
-    if not parts:
-        return command_string
-
-    command_part = parts[0]
-    remaining_parts = parts[1:]
-
-    resolved_parts = [
-        _resolve_relative_part(p, workspace_path) for p in remaining_parts
-    ]
-    return _shell_join([command_part, *resolved_parts])
+    # Otherwise treat as workspace-relative path
+    return str(Path(workspace) / cmd), remaining
 
 
 class PathResolver:
@@ -206,5 +111,14 @@ class PathResolver:
     def resolve_command(self, command: str) -> str:
         return resolve_command(command, self.workspace)
 
+    def split_command(self, command_string: str) -> Tuple[str, List[str]]:
+        """Split and resolve a command string. Returns (executable, leading_args)."""
+        return split_command(command_string, self.workspace)
+
     def parse_command_string(self, command_string: str) -> str:
-        return parse_command_string(command_string, self.workspace)
+        """
+        Backward-compatible: resolves and returns the executable name only.
+        Prefer split_command() for new code.
+        """
+        executable, _ = split_command(command_string, self.workspace)
+        return executable

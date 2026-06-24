@@ -200,8 +200,10 @@ class TestRunnerIntegration(unittest.TestCase):
         config_path = self.create_test_config_file(config)
         runner = JSONRunner(config_path, workspace=self.temp_dir)
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="test_value\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("test_value\n", "")), returncode=0, pid=1
+            )
             self.assertIsNone(os.environ.get("TEST_ENV"))
             result = runner.run_tests()
             self.assertTrue(result)

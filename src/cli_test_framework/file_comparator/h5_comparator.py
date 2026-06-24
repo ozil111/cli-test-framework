@@ -717,7 +717,3 @@ class H5Comparator(BaseComparator):
             ))
         
         return differences
-
-# Register the new comparator
-from .factory import ComparatorFactory
-ComparatorFactory.register_comparator('h5', H5Comparator)

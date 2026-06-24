@@ -3,9 +3,77 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_compl
 from typing import List, Dict, Any, Optional, Union
 import time
 import threading
+import logging
 from .base_runner import BaseRunner
 from .test_case import TestCase
 from .process_worker import run_test_in_process
+
+logger = logging.getLogger("cli_test_framework.core.parallel_runner")
+
+
+class AtomicSemaphore:
+    """
+    支持原子级多令牌获取的信号量，消除逐个 acquire 导致的部分占有死锁。
+
+    与 threading.Semaphore 不同：acquire(n) 在所有 n 个令牌可用时一次性获取，
+    否则等待（支持超时），不会出现"拿了3个等1个，另一个线程也拿了3个等1个"的死锁。
+
+    唤醒策略：按请求令牌数降序优先唤醒，避免大核数任务被小任务持续抢占导致饥饿。
+    """
+
+    def __init__(self, value: int):
+        self._value = value
+        self._lock = threading.Lock()
+        self._waiters: list = []  # list of (required_n, threading.Event)
+
+    def _grant_tokens(self) -> None:
+        """Grant tokens to eligible waiters, largest request first (anti-starvation)."""
+        if not self._waiters:
+            return
+        # Sort by required_n descending so large-core requests get priority
+        self._waiters.sort(key=lambda x: -x[0])
+        granted: list = []
+        remaining: list = []
+        for n, event in self._waiters:
+            if self._value >= n:
+                self._value -= n
+                granted.append(event)
+            else:
+                remaining.append((n, event))
+        self._waiters = remaining
+        for event in granted:
+            event.set()
+
+    def acquire(self, n: int = 1, timeout: Optional[float] = None) -> bool:
+        """Atomically acquire n tokens. Returns True on success, False on timeout."""
+        event = threading.Event()
+        with self._lock:
+            # Fast path: enough tokens and no pending waiters
+            if self._value >= n and not self._waiters:
+                self._value -= n
+                return True
+            self._waiters.append((n, event))
+            self._grant_tokens()
+
+        if not event.wait(timeout=timeout):
+            # Timeout cleanup – guard against race where release granted
+            # tokens between event.wait() returning and lock acquisition
+            with self._lock:
+                if event.is_set():
+                    return True
+                for i, (_, e) in enumerate(self._waiters):
+                    if e is event:
+                        del self._waiters[i]
+                        self._grant_tokens()
+                        break
+            return False
+        return True
+
+    def release(self, n: int = 1) -> None:
+        """Release n tokens, waking eligible waiters with anti-starvation priority."""
+        with self._lock:
+            self._value += n
+            self._grant_tokens()
 
 class ParallelRunner(BaseRunner):
     """并行测试运行器基类，支持多线程和多进程执行"""
@@ -41,15 +109,15 @@ class ParallelRunner(BaseRunner):
             self.results["total"] = len(self.test_cases)
             
             if self.results["total"] == 0:
-                print("No test cases to run.")
+                logger.warning("No test cases to run.")
                 return False
             
             # 执行setup任务
             self.setup_manager.setup_all()
             
-            print(f"\nStarting parallel test execution... Total tests: {self.results['total']}")
-            print(f"Execution mode: {self.execution_mode}, Max workers: {self.max_workers or 'auto'}")
-            print("=" * 50)
+            logger.info("Starting parallel test execution... Total tests: %d", self.results["total"])
+            logger.info("Execution mode: %s, Max workers: %s", self.execution_mode, self.max_workers or "auto")
+            logger.info("=" * 50)
             
             start_time = time.time()
             
@@ -114,9 +182,9 @@ class ParallelRunner(BaseRunner):
             end_time = time.time()
             execution_time = end_time - start_time
             
-            print("\n" + "=" * 50)
-            print(f"Parallel test execution completed in {execution_time:.2f} seconds")
-            print(f"Passed: {self.results['passed']}, Failed: {self.results['failed']}")
+            logger.info("=" * 50)
+            logger.info("Parallel test execution completed in %.2f seconds", execution_time)
+            logger.info("Passed: %d, Failed: %d", self.results["passed"], self.results["failed"])
 
             # Update history & regression detection
             self._update_history()
@@ -128,7 +196,7 @@ class ParallelRunner(BaseRunner):
     
     def _run_test_with_index(self, test_index: int, case: TestCase) -> Dict[str, Any]:
         """运行单个测试并返回结果（包含索引信息）"""
-        print(f"[Worker] Running test {test_index}: {case.name}")
+        logger.info("[Worker] Running test %d: %s", test_index, case.name)
         result = self.run_single_test(case)
         return result
     
@@ -139,14 +207,14 @@ class ParallelRunner(BaseRunner):
             duration = result.get("duration", 0)
             if result["status"] == "passed":
                 self.results["passed"] += 1
-                print(f"✓ Test {test_index} passed: {case.name} ({duration:.2f}s)")
+                logger.info("✓ Test %d passed: %s (%.2fs)", test_index, case.name, duration)
             else:
                 self.results["failed"] += 1
-                print(f"✗ Test {test_index} failed: {case.name} ({duration:.2f}s)")
+                logger.error("✗ Test %d failed: %s (%.2fs)", test_index, case.name, duration)
                 if result["message"]:
-                    print(f"  Error: {result['message']}")
+                    logger.error("  Error: %s", result["message"])
     
     def run_tests_sequential(self) -> bool:
         """回退到顺序执行模式"""
-        print("Falling back to sequential execution...")
+        logger.info("Falling back to sequential execution...")
         return super().run_tests() 

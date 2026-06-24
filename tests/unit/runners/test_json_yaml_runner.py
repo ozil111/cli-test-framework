@@ -29,8 +29,10 @@ class TestJSONRunner(unittest.TestCase):
         self.assertGreater(len(self.runner.test_cases), 0, "No test cases loaded")
 
     def test_run_tests(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = self.runner.run_tests()
         self.assertTrue(success, "Some tests failed")
 
@@ -69,8 +71,10 @@ class TestYAMLRunner(unittest.TestCase):
         self.assertGreater(len(self.runner.test_cases), 0, "No test cases loaded")
 
     def test_run_tests(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = self.runner.run_tests()
         self.assertTrue(success, "Some tests failed")
 

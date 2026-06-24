@@ -55,8 +55,10 @@ class TestJSONRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=["alpha"]
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="a\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("a\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(len(runner.test_cases), 1)
@@ -68,8 +70,10 @@ class TestJSONRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=["alpha", "gamma"]
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         names = [tc.name for tc in runner.test_cases]
@@ -90,8 +94,10 @@ class TestJSONRunnerFilter(unittest.TestCase):
         runner = JSONRunner(
             str(self.config_path), workspace=self.temp_dir.name
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(len(runner.test_cases), 3)
@@ -102,8 +108,10 @@ class TestJSONRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=None
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(len(runner.test_cases), 3)
@@ -127,8 +135,10 @@ class TestYAMLRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=["beta"]
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="b\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("b\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(len(runner.test_cases), 1)
@@ -157,8 +167,10 @@ class TestParallelJSONRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=["alpha"], max_workers=2
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="a\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("a\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(len(runner.test_cases), 1)
@@ -169,8 +181,10 @@ class TestParallelJSONRunnerFilter(unittest.TestCase):
             str(self.config_path), workspace=self.temp_dir.name,
             test_case_filter=["alpha", "gamma"], max_workers=2
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        with patch("subprocess.Popen") as mock_popen:
+            mock_popen.return_value = MagicMock(
+                communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+            )
             success = runner.run_tests()
         self.assertTrue(success)
         names = [tc.name for tc in runner.test_cases]

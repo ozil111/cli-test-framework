@@ -160,9 +160,11 @@ class TestSequenceExecution(unittest.TestCase):
         path.write_text(json.dumps(config), encoding="utf-8")
         return path
 
-    @patch("subprocess.run")
-    def test_sequence_all_pass(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+    @patch("subprocess.Popen")
+    def test_sequence_all_pass(self, mock_popen):
+        mock_popen.return_value = MagicMock(
+            communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+        )
         config = {
             "test_cases": [
                 {
@@ -179,15 +181,15 @@ class TestSequenceExecution(unittest.TestCase):
         success = runner.run_tests()
         self.assertTrue(success)
         self.assertEqual(runner.results["passed"], 1)
-        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(mock_popen.call_count, 2)
 
-    @patch("subprocess.run")
-    def test_sequence_fail_stops_early(self, mock_run):
+    @patch("subprocess.Popen")
+    def test_sequence_fail_stops_early(self, mock_popen):
         """Step 2 fails → step 3 should NOT execute."""
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="ok\n", stderr=""),     # step 1 pass
-            MagicMock(returncode=1, stdout="", stderr="err"),       # step 2 fail
-            MagicMock(returncode=0, stdout="no\n", stderr=""),      # step 3 should not run
+        mock_popen.side_effect = [
+            MagicMock(communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1),   # step 1 pass
+            MagicMock(communicate=MagicMock(return_value=("", "err")), returncode=1, pid=2),    # step 2 fail
+            MagicMock(communicate=MagicMock(return_value=("no\n", "")), returncode=0, pid=3),   # step 3 should not run
         ]
         config = {
             "test_cases": [
@@ -206,16 +208,16 @@ class TestSequenceExecution(unittest.TestCase):
         success = runner.run_tests()
         self.assertFalse(success)
         # Only 2 subprocess calls: step 1 + step 2 (step 3 skipped)
-        self.assertEqual(mock_run.call_count, 2)
+        self.assertEqual(mock_popen.call_count, 2)
         detail = runner.results["details"][0]
         self.assertEqual(detail["status"], "failed")
         self.assertIn("step 2", detail["message"])
 
-    @patch("subprocess.run")
-    def test_sequence_aggregates_output_and_duration(self, mock_run):
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="out1\n", stderr=""),
-            MagicMock(returncode=0, stdout="out2\n", stderr=""),
+    @patch("subprocess.Popen")
+    def test_sequence_aggregates_output_and_duration(self, mock_popen):
+        mock_popen.side_effect = [
+            MagicMock(communicate=MagicMock(return_value=("out1\n", "")), returncode=0, pid=1),
+            MagicMock(communicate=MagicMock(return_value=("out2\n", "")), returncode=0, pid=2),
         ]
         config = {
             "test_cases": [
@@ -237,10 +239,12 @@ class TestSequenceExecution(unittest.TestCase):
         self.assertIn("->", detail["command"])  # command chain separator
         self.assertGreaterEqual(detail["duration"], 0)
 
-    @patch("subprocess.run")
-    def test_single_command_backward_compat(self, mock_run):
+    @patch("subprocess.Popen")
+    def test_single_command_backward_compat(self, mock_popen):
         """Single-command case still works as before."""
-        mock_run.return_value = MagicMock(returncode=0, stdout="ok\n", stderr="")
+        mock_popen.return_value = MagicMock(
+            communicate=MagicMock(return_value=("ok\n", "")), returncode=0, pid=1
+        )
         config = {
             "test_cases": [
                 {
@@ -255,7 +259,7 @@ class TestSequenceExecution(unittest.TestCase):
         runner = JSONRunner(str(path), workspace=self.temp_dir.name)
         success = runner.run_tests()
         self.assertTrue(success)
-        self.assertEqual(mock_run.call_count, 1)
+        self.assertEqual(mock_popen.call_count, 1)
 
     def tearDown(self):
         self.temp_dir.cleanup()
