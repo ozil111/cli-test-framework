@@ -118,6 +118,7 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",
             start_new_session=True,
             env=current_env,
         )

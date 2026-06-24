@@ -10,8 +10,11 @@
 - [顺序步骤测试](#顺序步骤测试)
 - [资源感知调度](#资源感知调度)
 - [历史记录与回归检测](#历史记录与回归检测)
+- [JUnit XML 报告](#junit-xml-报告)
+- [日志配置](#日志配置)
 - [文件比较](#文件比较)
 - [扩展开发](#扩展开发)
+- [运行框架自带测试](#运行框架自带测试)
 
 ## 安装
 
@@ -26,6 +29,8 @@ YAML 支持需额外安装：
 ```bash
 pip install pyyaml
 ```
+
+HDF5 文件比较依赖 `h5py`（已随框架安装）。如需在无 HDF5 环境下使用其他比较功能，可单独卸载，但 HDF5 比较将不可用。
 
 ## 测试用例定义
 
@@ -48,7 +53,14 @@ pip install pyyaml
             "expected": {
                 "return_code": 0,
                 "output_contains": ["Hello"],
-                "output_matches": [".*regex.*"]
+                "output_matches": ".*regex.*",
+                "compare_files": [
+                    {
+                        "actual": "output.txt",
+                        "baseline": "baseline.txt",
+                        "type": "text"
+                    }
+                ]
             }
         }
     ]
@@ -72,8 +84,11 @@ test_cases:
       return_code: 0
       output_contains:
         - "Hello"
-      output_matches:
-        - ".*regex.*"
+      output_matches: ".*regex.*"
+      compare_files:
+        - actual: output.txt
+          baseline: baseline.txt
+          type: text
 ```
 
 ### 字段说明
@@ -81,13 +96,48 @@ test_cases:
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | `name` | 是 | 测试用例名称 |
-| `command` | 是 | 要执行的命令 |
+| `command` | 是 | 要执行的命令（支持带参数的命令字符串，如 `python ./run.py`，框架会自动拆分并解析路径） |
 | `args` | 否 | 命令参数列表 |
+| `description` | 否 | 测试用例描述 |
 | `timeout` | 否 | 超时秒数，默认 3600，设 `null` 无限制 |
 | `resources` | 否 | 资源配置，见[资源感知调度](#资源感知调度) |
 | `expected.return_code` | 否 | 期望返回码 |
 | `expected.output_contains` | 否 | 输出需包含的字符串列表 |
-| `expected.output_matches` | 否 | 输出需匹配的正则列表 |
+| `expected.output_matches` | 否 | 输出需匹配的正则表达式（单个字符串） |
+| `expected.compare_files` | 否 | 文件比较断言列表，见下文 |
+
+### 文件比较断言（compare_files）
+
+在 `expected` 中通过 `compare_files` 可声明一条或多条文件比较规则，框架会在命令执行后自动用对应的比较器对比实际产出文件与基线文件。所有比较通过才算用例通过，可与 `return_code`、`output_contains` 等断言共存。
+
+每个比较规则的字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `actual` | 是 | 测试命令产出的文件路径（相对路径按 workspace 解析） |
+| `baseline` | 是 | 基线/参考文件路径（相对路径按 workspace 解析） |
+| `type` | 否 | 比较器类型：`text`、`json`、`csv`、`xml`、`h5`、`binary`；省略时按扩展名自动识别 |
+| 其他 | 否 | 透传给对应比较器的参数，如 `rtol`、`atol`、`encoding`、`tables`、`data_filter` 等 |
+
+```json
+"expected": {
+    "return_code": 0,
+    "compare_files": [
+        {
+            "actual": "result.h5",
+            "baseline": "baseline/result.h5",
+            "type": "h5",
+            "rtol": 1e-5,
+            "atol": 1e-8,
+            "tables": ["/stress", "/displacement"]
+        },
+        {
+            "actual": "summary.csv",
+            "baseline": "baseline/summary.csv"
+        }
+    ]
+}
+```
 
 ## 运行测试
 
@@ -126,6 +176,9 @@ cli-test run test_cases.json --history-dir ./hist
 
 # 自定义回归检测阈值（默认 1.5 倍）
 cli-test run test_cases.json --history-dir ./hist --regression-threshold 2.0
+
+# 输出 JUnit XML 报告（可供 Jenkins/GitLab CI 等工具解析）
+cli-test run test_cases.json --junit-xml report.xml
 ```
 
 ### Python API
@@ -146,7 +199,7 @@ success = runner.run_tests()
 # YAML 格式
 runner = YAMLRunner(config_file="test_cases.yaml")
 
-# 并行运行
+# 并行运行（JSON）
 runner = ParallelJSONRunner(
     config_file="test_cases.json",
     max_workers=4,                   # 可选，默认 CPU 核心数
@@ -154,6 +207,15 @@ runner = ParallelJSONRunner(
     test_case_filter=["test_1"],
     history_dir="./hist",            # 可选，启用历史记录与智能调度
     regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
+)
+success = runner.run_tests()
+
+# 并行运行（YAML）
+from cli_test_framework.runners import ParallelYAMLRunner
+runner = ParallelYAMLRunner(
+    config_file="test_cases.yaml",
+    max_workers=4,
+    execution_mode="thread",
 )
 success = runner.run_tests()
 ```
@@ -164,7 +226,7 @@ success = runner.run_tests()
 runner.run_tests()
 
 # 汇总
-runner.results["total_tests"]
+runner.results["total"]
 runner.results["passed"]
 runner.results["failed"]
 
@@ -405,17 +467,108 @@ success = runner.run_tests()
 
 不传 `--history-dir` 时行为与之前完全一致，不创建任何额外文件。
 
-### 命令行工具 `compare-files`
+## JUnit XML 报告
+
+通过 `--junit-xml` 可在运行测试的同时输出 JUnit 格式的 XML 报告，兼容 Jenkins、GitLab CI、CircleCI 等 CI 工具。
+
+### CLI 用法
 
 ```bash
+cli-test run test_cases.json --junit-xml report.xml
+```
+
+`--junit-xml` 是补充输出，与 `--output-format`（text/json/html）并存，不影响控制台报告。
+
+### Python API
+
+```python
+from cli_test_framework import write_junit_xml
+
+runner.run_tests()
+write_junit_xml(runner.results, "report.xml", suite_name="my_suite")
+```
+
+状态映射：`passed` 记为通过；`failed`（断言失败）记为 failure；`timeout` 与执行错误记为 error。每个 testcase 元素附带命令输出与失败原因。
+
+## 日志配置
+
+框架所有诊断与状态信息都通过 Python 标准 `logging` 模块输出，统一挂在 `cli_test_framework` 命名空间下。日志默认写入 **stderr**，因此 `stdout` 始终保持干净，可安全配合 `--output-format json` 做机器可读输出。
+
+### 命令行控制日志级别
+
+`run` 与 `compare` 子命令均支持：
+
+| 选项 | 说明 |
+|---|---|
+| `--verbose` / `-v` | 详细输出，日志级别提升至 DEBUG |
+| `--debug` | 调试模式，同样提升至 DEBUG，并在出错时打印完整堆栈 |
+
+默认级别为 INFO，仅显示关键进度与错误；加 `--verbose` 或 `--debug` 后会输出命令输出、调度细节等 DEBUG 级信息。
+
+```bash
+# 详细模式（含命令输出等 DEBUG 信息）
+cli-test run test_cases.json --verbose
+
+# 调试模式（出错时打印堆栈）
+cli-test run test_cases.json --debug
+```
+
+### 库使用方式
+
+作为库被 import 时，框架默认只挂载 `NullHandler`，不产生任何输出（符合库的礼貌日志规范）。需要看到日志时，调用 `setup_console_logging()` 启用控制台输出：
+
+```python
+import logging
+from cli_test_framework.logging_config import setup_console_logging, get_logger
+
+# 启用控制台日志（stderr），可指定级别
+setup_console_logging(level=logging.DEBUG)
+
+logger = get_logger(__name__)   # 自动归入 cli_test_framework 命名空间
+logger.info("自定义日志信息")
+```
+
+### 输出到日志文件
+
+框架未内置 `--log-file` 选项，但可借助 Python 标准 `logging` 自行为 `cli_test_framework` logger 添加文件处理器：
+
+```python
+import logging
+from cli_test_framework.logging_config import get_logger
+
+file_handler = logging.FileHandler("run.log", encoding="utf-8")
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(
+    logging.Formatter("%(asctime)s %(levelname)-7s %(name)s %(message)s")
+)
+
+# 给框架根 logger 加文件处理器，所有子 logger 都会继承
+logging.getLogger("cli_test_framework").addHandler(file_handler)
+```
+
+上述代码既适用于库调用，也可放在脚本中配合 `cli-test` 一起使用。控制台与文件处理器可并存。
+
+## 文件比较
+
+框架提供独立的文件比较能力，支持文本、JSON、CSV、XML、HDF5、二进制等多种格式。既可通过命令行工具使用，也可在测试用例的 `expected.compare_files` 中自动调用（见[文件比较断言](#文件比较断言compare_files)）。
+
+### 命令行工具
+
+有两种等价的调用方式，参数完全一致：
+
+```bash
+# 独立命令
 compare-files <file1> <file2> [选项]
+
+# cli-test 子命令
+cli-test compare <file1> <file2> [选项]
 ```
 
 ### 通用选项
 
 | 选项 | 说明 |
 |---|---|
-| `--file-type` | 文件类型：`auto`（默认）、`text`、`json`、`h5`、`binary` |
+| `--file-type` | 文件类型：`auto`（默认）、`text`、`json`、`csv`、`xml`、`h5`、`binary` |
 | `--start-line` | 起始行号（1-based），默认 1 |
 | `--end-line` | 结束行号（1-based） |
 | `--start-column` | 起始列号（1-based），默认 1 |
@@ -446,6 +599,40 @@ compare-files data1.json data2.json --json-compare-mode key-based --json-key-fie
 |---|---|
 | `--json-compare-mode` | `exact`（默认）或 `key-based` |
 | `--json-key-field` | key-based 模式的匹配字段，支持逗号分隔多字段 |
+
+### CSV 文件比较
+
+```bash
+# 基本比较
+compare-files data1.csv data2.csv
+
+# 自定义分隔符与数值容差
+compare-files data1.csv data2.csv --csv-delimiter ';' --csv-rtol 1e-4 --csv-atol 1e-6
+
+# TSV 文件（自动识别为 csv 类型）
+compare-files data1.tsv data2.tsv
+```
+
+| 选项 | 说明 |
+|---|---|
+| `--csv-rtol` | 数值相对容差，默认 1e-5 |
+| `--csv-atol` | 数值绝对容差，默认 1e-8 |
+| `--csv-delimiter` | 字段分隔符，默认 `,` |
+| `--csv-quotechar` | 引用字符，默认 `"` |
+
+CSV 比较按行列结构逐单元格比对；数值单元格在容差范围内视为相等。差异报告包含行数、列数不匹配与单元格不一致，最多列出 10 条。
+
+### XML 文件比较
+
+```bash
+# 结构化比较（标签、属性、文本、子元素）
+compare-files config1.xml config2.xml
+
+# HTML 文件（自动识别为 xml 类型）
+compare-files page1.html page2.html
+```
+
+XML 比较按 DOM 结构递归比对标签、属性、文本内容与子元素数量。差异报告定位到具体路径（如 `/root/item[0]/@id`），最多列出 10 条。
 
 ### HDF5 文件比较
 
@@ -506,6 +693,14 @@ result = comparator.compare_files("file1.txt", "file2.txt")
 comparator = ComparatorFactory.create_comparator("json", compare_mode="key-based", key_field="id")
 result = comparator.compare_files("data1.json", "data2.json")
 
+# CSV 比较
+comparator = ComparatorFactory.create_comparator("csv", rtol=1e-5, atol=1e-8, delimiter=",")
+result = comparator.compare_files("data1.csv", "data2.csv")
+
+# XML 比较
+comparator = ComparatorFactory.create_comparator("xml", encoding="utf-8")
+result = comparator.compare_files("config1.xml", "config2.xml")
+
 # HDF5 比较
 comparator = ComparatorFactory.create_comparator("h5", tables=["table1"], rtol=1e-5)
 result = comparator.compare_files("data1.h5", "data2.h5")
@@ -520,7 +715,7 @@ result.differences # list
 ### 自定义 Runner
 
 ```python
-from cli_test_framework.runners import BaseRunner
+from cli_test_framework.core.base_runner import BaseRunner
 
 class CustomRunner(BaseRunner):
     def load_test_cases(self):
@@ -546,13 +741,81 @@ class MySetup(BaseSetup):
         pass
 ```
 
-### 自定义断言
+### 自定义文件比较器
+
+`ComparatorFactory` 会在首次使用时自动扫描 `file_comparator` 包内所有 `*_comparator.py` 模块并注册其中的 `*Comparator` 类。如需注册自定义比较器，调用 `register_comparator` 即可：
 
 ```python
-from cli_test_framework.assertions import BaseAssertion
+from cli_test_framework.file_comparator import ComparatorFactory
+from cli_test_framework.file_comparator.base_comparator import BaseComparator
 
-class CustomAssertion(BaseAssertion):
-    def assert_custom_condition(self, actual, expected):
-        if not self._check(actual, expected):
-            raise AssertionError("Condition not met")
+class FooComparator(BaseComparator):
+    # 实现 read_content / compare_content 等方法
+    pass
+
+ComparatorFactory.register_comparator("foo", FooComparator)
+
+# 之后即可在 compare_files 断言或命令行 --file-type foo 中使用
+comparator = ComparatorFactory.create_comparator("foo")
+```
+
+### 断言与文件比较
+
+`Assertions` 类提供静态断言方法，`expected` 中的校验均由其完成：
+
+```python
+from cli_test_framework.core.assertions import Assertions
+
+Assertions.return_code_equals(actual_code, 0)
+Assertions.contains(output, "expected text")
+Assertions.matches(output, r".*regex.*")
+Assertions.compare_files("actual.txt", "baseline.txt", file_type="text", workspace="/ws")
+```
+
+`compare_files` 会自动按扩展名识别类型（`.h5/.hdf5/.hdf`→h5、`.json`→json、`.csv/.tsv`→csv、`.xml/.html/.htm`→xml、`.txt/.log/.out/.py`→text、其余→binary），相对路径按 `workspace` 解析，额外参数透传给比较器。
+
+## 运行框架自带测试
+
+项目自带统一测试入口 `tests/run_all.py`，通过 `--scope` 选择测试范围（test target），并可用 `--extra` 透传任意 pytest 参数。
+
+### 测试范围
+
+| scope | 说明 | 对应目录 |
+|---|---|---|
+| `unit` | 单元测试（core、runners 等） | `tests/unit` |
+| `integration` | 集成测试（文件比较、并行、路径处理等） | `tests/integration` |
+| `e2e` | 端到端测试（用户流程） | `tests/e2e` |
+| `all` | 运行上述全部范围（默认） | 三者合集 |
+
+> 注：`tests/demos/` 下的脚本为手动/交互演示，不纳入 scope 运行，需单独执行。
+
+### 用法
+
+```bash
+# 运行全部测试（默认）
+python tests/run_all.py
+
+# 只运行单元测试
+python tests/run_all.py --scope unit
+
+# 只运行集成测试
+python tests/run_all.py --scope integration
+
+# 只运行端到端测试
+python tests/run_all.py --scope e2e
+
+# 透传 pytest 参数，例如按关键字过滤
+python tests/run_all.py --scope integration --extra "-k h5"
+
+# 透传多个 pytest 参数
+python tests/run_all.py --scope unit --extra "-v -k assertions"
+```
+
+`--extra` 接收的字符串会经 `shlex` 拆分后追加到 pytest 命令行。脚本通过当前解释器（`sys.executable -m pytest`）调用 pytest，确保使用激活的环境而非 PATH 中首个 `pytest`。
+
+测试环境需先激活 conda 环境：
+
+```bash
+conda activate xiaotong
+python tests/run_all.py
 ```

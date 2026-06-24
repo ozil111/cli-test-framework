@@ -130,10 +130,13 @@ tests/unit/commands/test_compare_command.py
 tests/unit/commands/__pycache__/test_compare_command.cpython-312-pytest-7.4.4.pyc
 tests/unit/commands/__pycache__/test_compare_command.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/test_assertions.py
+tests/unit/core/test_execution.py
 tests/unit/core/test_history_store.py
 tests/unit/core/test_process_worker.py
 tests/unit/core/test_setup.py
+tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-9.0.3.pyc
+tests/unit/core/__pycache__/test_execution.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_process_worker.cpython-312-pytest-7.4.4.pyc
@@ -150,6 +153,7 @@ tests/unit/runners/__pycache__/test_test_case_filter.cpython-312-pytest-7.4.4.py
 tests/unit/runners/__pycache__/test_test_case_filter.cpython-312-pytest-9.0.3.pyc
 tests/unit/utils/test_junit_xml_writer.py
 tests/unit/utils/test_report_generator.py
+tests/unit/utils/__pycache__/test_junit_xml_writer.cpython-312-pytest-7.4.4.pyc
 tests/unit/utils/__pycache__/test_junit_xml_writer.cpython-312-pytest-9.0.3.pyc
 tests/unit/utils/__pycache__/test_report_generator.cpython-312-pytest-7.4.4.pyc
 tests/unit/utils/__pycache__/test_report_generator.cpython-312-pytest-9.0.3.pyc
