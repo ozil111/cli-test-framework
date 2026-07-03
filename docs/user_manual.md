@@ -5,6 +5,7 @@
 - [安装](#安装)
 - [测试用例定义](#测试用例定义)
 - [运行测试](#运行测试)
+- [标签过滤](#标签过滤)
 - [Setup 模块](#setup-模块)
 - [并行测试](#并行测试)
 - [顺序步骤测试](#顺序步骤测试)
@@ -100,6 +101,7 @@ test_cases:
 | `args` | 否 | 命令参数列表 |
 | `description` | 否 | 测试用例描述 |
 | `timeout` | 否 | 超时秒数，默认 3600，设 `null` 无限制 |
+| `tags` | 否 | 标签列表，用于批量过滤（如 `["smoke", "fast"]`） |
 | `resources` | 否 | 资源配置，见[资源感知调度](#资源感知调度) |
 | `expected.return_code` | 否 | 期望返回码 |
 | `expected.output_contains` | 否 | 输出需包含的字符串列表 |
@@ -162,6 +164,13 @@ cli-test run test_cases.json --parallel --execution-mode process
 # 只运行指定用例
 cli-test run test_cases.json -t test_name_1 -t test_name_2
 
+# 按标签过滤
+cli-test run test_cases.json --tag smoke
+cli-test run test_cases.json --tag smoke --tag regression
+
+# 同时按名称和标签过滤（AND 关系）
+cli-test run test_cases.json -t test_name_1 --tag smoke
+
 # 详细输出
 cli-test run test_cases.json --verbose
 
@@ -191,6 +200,7 @@ runner = JSONRunner(
     config_file="test_cases.json",
     workspace="/path/to/project",    # 可选，默认项目根目录
     test_case_filter=["test_1"],     # 可选，只运行指定用例
+    test_case_tag_filter=["smoke"],  # 可选，只运行包含指定标签的用例
     history_dir="./hist",            # 可选，启用历史记录与回归检测
     regression_threshold=2.0,        # 可选，回归阈值倍数，默认 1.5
 )
@@ -233,6 +243,80 @@ runner.results["failed"]
 # 详情
 for detail in runner.results["details"]:
     print(detail["name"], detail["status"], detail.get("message", ""))
+```
+
+## 标签过滤
+
+通过标签（tags）可以对测试用例进行分类，并在运行时按标签批量过滤。标签过滤与名称过滤可同时使用，满足 AND 关系（两个条件都必须满足）。
+
+### 在测试用例中定义标签
+
+JSON：
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "快速测试",
+            "command": "echo",
+            "args": ["hello"],
+            "tags": ["smoke", "fast"],
+            "expected": { "return_code": 0 }
+        },
+        {
+            "name": "完整回归测试",
+            "command": "python",
+            "args": ["long_test.py"],
+            "tags": ["regression", "slow"],
+            "expected": { "return_code": 0 }
+        }
+    ]
+}
+```
+
+YAML：
+
+```yaml
+test_cases:
+  - name: 快速测试
+    command: echo
+    args: ["hello"]
+    tags: ["smoke", "fast"]
+    expected:
+      return_code: 0
+```
+
+`tags` 是可选字段，不指定则默认为空列表。每个用例可以有多个标签。
+
+### 运行时过滤
+
+```bash
+# 只运行带 "smoke" 标签的用例
+cli-test run test_cases.json --tag smoke
+
+# 运行带 "smoke" 或 "regression" 标签的用例（OR 关系）
+cli-test run test_cases.json --tag smoke --tag regression
+
+# 同时按名称和标签过滤（AND 关系）
+cli-test run test_cases.json -t alpha --tag fast
+```
+
+### Python API
+
+```python
+runner = JSONRunner(
+    config_file="test_cases.json",
+    test_case_tag_filter=["smoke"],     # 只运行含 smoke 标签的用例
+)
+success = runner.run_tests()
+
+# 结合名称过滤
+runner = JSONRunner(
+    config_file="test_cases.json",
+    test_case_filter=["alpha", "beta"],
+    test_case_tag_filter=["fast"],
+)
+success = runner.run_tests()
 ```
 
 ## Setup 模块

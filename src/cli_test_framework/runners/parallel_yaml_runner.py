@@ -21,6 +21,7 @@ class ParallelYAMLRunner(ParallelConfigRunner):
                  max_workers: Optional[int] = None,
                  execution_mode: str = "thread",
                  test_case_filter: Optional[list] = None,
+                 test_case_tag_filter: Optional[list] = None,
                  history_dir: Optional[str] = None,
                  regression_threshold: float = 1.5):
         super().__init__(
@@ -29,6 +30,7 @@ class ParallelYAMLRunner(ParallelConfigRunner):
             max_workers=max_workers,
             execution_mode=execution_mode,
             test_case_filter=test_case_filter,
+            test_case_tag_filter=test_case_tag_filter,
             history_dir=history_dir,
             regression_threshold=regression_threshold,
             config_loader=_yaml_load,

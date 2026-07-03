@@ -14,6 +14,7 @@ logger = logging.getLogger("cli_test_framework.core.base_runner")
 class BaseRunner(ABC):
     def __init__(self, config_file: str, workspace: Optional[str] = None,
                  test_case_filter: Optional[List[str]] = None,
+                 test_case_tag_filter: Optional[List[str]] = None,
                  history_dir: Optional[str] = None,
                  regression_threshold: float = 1.5):
         if workspace:
@@ -27,6 +28,7 @@ class BaseRunner(ABC):
             self.config_path = self.workspace / config_path
         self.test_cases: List[TestCase] = []
         self.test_case_filter: Optional[List[str]] = test_case_filter
+        self.test_case_tag_filter: Optional[List[str]] = test_case_tag_filter
         if history_dir:
             self.history_dir = str((self.workspace / history_dir).resolve())
         else:
@@ -63,16 +65,22 @@ class BaseRunner(ABC):
         #         pass
 
     def _apply_test_case_filter(self) -> None:
-        """根据 test_case_filter 过滤测试用例"""
-        if self.test_case_filter:
+        """根据 test_case_filter 和 test_case_tag_filter 过滤测试用例"""
+        if self.test_case_filter or self.test_case_tag_filter:
             original_count = len(self.test_cases)
-            self.test_cases = [tc for tc in self.test_cases if tc.name in self.test_case_filter]
+            self.test_cases = [
+                tc for tc in self.test_cases
+                if (not self.test_case_filter or tc.name in self.test_case_filter)
+                and (not self.test_case_tag_filter
+                     or set(tc.tags or []) & set(self.test_case_tag_filter))
+            ]
             filtered_out = original_count - len(self.test_cases)
             if filtered_out > 0:
                 logger.info("Filtered out %d test case(s). Running %d specified case(s).",
                             filtered_out, len(self.test_cases))
             if not self.test_cases:
-                logger.warning("No matching test cases found for: %s", self.test_case_filter)
+                logger.warning("No matching test cases found for: names=%s, tags=%s",
+                               self.test_case_filter, self.test_case_tag_filter)
 
     def run_tests(self) -> bool:
         """Run all test cases and return whether all tests passed"""

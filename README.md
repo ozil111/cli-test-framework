@@ -20,7 +20,7 @@ CLI Test Framework was built for that workflow.
 - **Sequence Steps** — Multi-step execution within a single test case, fail-fast
 - **Setup Module** — Auto-configure environment variables before tests, auto-cleanup after
 - **File Comparison** — Text / JSON / CSV / XML / HDF5 / Binary, with CLI and embedded assertion support
-- **Filtered Execution** — Run specific test cases by name
+- **Filtered Execution** — Run specific test cases by name or tag
 - **JUnit XML Output** — `--junit-xml` for GitLab CI / Jenkins / CircleCI test report panels
 
 ## Quick Start
@@ -40,6 +40,7 @@ pip install cli-test-framework
             "name": "hello",
             "command": "echo",
             "args": ["Hello World"],
+            "tags": ["smoke"],
             "expected": {
                 "return_code": 0,
                 "output_contains": ["Hello World"]
@@ -109,6 +110,19 @@ Multiple files and mixed assertion types coexist naturally:
 cli-test run test_cases.json --parallel --workers 4
 ```
 
+### Run Specific Cases
+
+```bash
+# By name
+cli-test run test_cases.json -t test_1 -t test_2
+
+# By tag
+cli-test run test_cases.json --tag smoke
+
+# Combine name and tag (AND logic)
+cli-test run test_cases.json -t test_1 --tag smoke
+```
+
 ### JUnit XML (CI Integration)
 
 ```bash
@@ -147,6 +161,10 @@ compare-files result1.h5 result2.h5 --h5-table-regex "output_.*" --h5-rtol 1e-5
 📖 **Full Documentation**: [docs/user_manual.md](docs/user_manual_en.md)
 
 ## Changelog
+
+### 0.9.0
+
+- **Tag filtering**: New `tags` field in test case definitions for categorization. Use `--tag` CLI option or `test_case_tag_filter` Python API to batch-filter test cases. Acts as OR within tags, AND with name filtering.
 
 ### 0.8.0
 

@@ -32,6 +32,7 @@ def make_args(config_file, **overrides):
         "execution_mode": "thread",
         "output_format": "text",
         "test_case": None,
+        "tag": None,
         "verbose": False,
         "debug": False,
     }

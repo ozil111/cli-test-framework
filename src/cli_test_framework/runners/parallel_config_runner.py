@@ -32,6 +32,7 @@ class ParallelConfigRunner(ParallelRunner):
                  max_workers: Optional[int] = None,
                  execution_mode: str = "thread",
                  test_case_filter: Optional[list] = None,
+                 test_case_tag_filter: Optional[list] = None,
                  history_dir: Optional[str] = None,
                  regression_threshold: float = 1.5,
                  config_loader: Optional[Callable[[BinaryIO], Dict[str, Any]]] = None):
@@ -44,6 +45,7 @@ class ParallelConfigRunner(ParallelRunner):
 
         super().__init__(config_file, workspace, max_workers,
                          execution_mode, test_case_filter,
+                         test_case_tag_filter,
                          history_dir, regression_threshold)
         self._config_loader = config_loader
         # Backward-compatible attribute for tests that patch path_resolver
