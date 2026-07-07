@@ -21,6 +21,7 @@ class TestCase:
     timeout: Optional[float] = None
     resources: Optional[Dict[str, Any]] = None
     steps: Optional[List[TestCaseStep]] = None
+    tags: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert test case to dictionary format"""
@@ -31,6 +32,7 @@ class TestCase:
             "expected": self.expected,
             "timeout": self.timeout,
             "resources": self.resources,
+            "tags": self.tags,
         }
         if self.steps is not None:
             result["steps"] = [

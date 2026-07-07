@@ -15,16 +15,12 @@ class ParallelJSONRunner(ParallelConfigRunner):
                  workspace: Optional[str] = None,
                  max_workers: Optional[int] = None,
                  execution_mode: str = "thread",
-                 test_case_filter: Optional[list] = None,
-                 history_dir: Optional[str] = None,
-                 regression_threshold: float = 1.5):
+                 **kwargs):
         super().__init__(
             config_file=config_file,
             workspace=workspace,
             max_workers=max_workers,
             execution_mode=execution_mode,
-            test_case_filter=test_case_filter,
-            history_dir=history_dir,
-            regression_threshold=regression_threshold,
             config_loader=json.load,
+            **kwargs,
         )

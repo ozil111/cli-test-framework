@@ -79,6 +79,7 @@ def parse_test_cases(
                 steps=steps,
                 description=case.get("description", ""),
                 resources=case.get("resources"),
+                tags=case.get("tags", []),
             ))
         else:
             # ── Single-command mode (backward-compatible) ──
@@ -100,6 +101,7 @@ def parse_test_cases(
                 description=case.get("description", ""),
                 timeout=case.get("timeout"),
                 resources=case.get("resources"),
+                tags=case.get("tags", []),
             ))
 
     return cases

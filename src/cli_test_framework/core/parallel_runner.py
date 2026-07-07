@@ -81,9 +81,7 @@ class ParallelRunner(BaseRunner):
     def __init__(self, config_file: str, workspace: Optional[str] = None, 
                  max_workers: Optional[int] = None, 
                  execution_mode: str = "thread",
-                 test_case_filter: Optional[List[str]] = None,
-                 history_dir: Optional[str] = None,
-                 regression_threshold: float = 1.5):
+                 **kwargs):
         """
         初始化并行运行器
         
@@ -92,11 +90,10 @@ class ParallelRunner(BaseRunner):
             workspace: 工作目录
             max_workers: 最大并发数，默认为CPU核心数
             execution_mode: 执行模式，'thread'(线程) 或 'process'(进程)
-            test_case_filter: 只运行指定名称的测试用例
-            history_dir: .symtest 历史记录目录
-            regression_threshold: 回归检测阈值
+            **kwargs: 透传给 BaseRunner 的额外参数
+                (test_case_filter, test_case_tag_filter, history_dir, regression_threshold)
         """
-        super().__init__(config_file, workspace, test_case_filter, history_dir, regression_threshold)
+        super().__init__(config_file, workspace, **kwargs)
         self.max_workers = max_workers
         self.execution_mode = execution_mode
         self.lock = threading.Lock()  # 用于线程安全的结果更新

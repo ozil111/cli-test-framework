@@ -51,6 +51,8 @@ Examples:
                            help='Output format for test results')
     run_parser.add_argument('--test-case', '-t', action='append', default=None,
                            help='Run only specified test case(s) by name (can be used multiple times)')
+    run_parser.add_argument('--tag', action='append', default=None,
+                           help='Run only test cases with matching tag(s) (can be used multiple times)')
     run_parser.add_argument('--history-dir',
                            help='Directory for .symtest runtime history (enables smart scheduling & regression detection)')
     run_parser.add_argument('--regression-threshold', type=float, default=1.5,
@@ -145,6 +147,7 @@ def run_tests(args):
                     max_workers=args.workers,
                     execution_mode=args.execution_mode,
                     test_case_filter=args.test_case,
+                    test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
                 )
@@ -155,6 +158,7 @@ def run_tests(args):
                     max_workers=args.workers,
                     execution_mode=args.execution_mode,
                     test_case_filter=args.test_case,
+                    test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
                 )
@@ -168,6 +172,7 @@ def run_tests(args):
                     config_file=str(config_file),
                     workspace=args.workspace,
                     test_case_filter=args.test_case,
+                    test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
                 )
@@ -176,6 +181,7 @@ def run_tests(args):
                     config_file=str(config_file),
                     workspace=args.workspace,
                     test_case_filter=args.test_case,
+                    test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
                 )

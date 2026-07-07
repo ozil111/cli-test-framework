@@ -31,10 +31,8 @@ class ParallelConfigRunner(ParallelRunner):
                  workspace: Optional[str] = None,
                  max_workers: Optional[int] = None,
                  execution_mode: str = "thread",
-                 test_case_filter: Optional[list] = None,
-                 history_dir: Optional[str] = None,
-                 regression_threshold: float = 1.5,
-                 config_loader: Optional[Callable[[BinaryIO], Dict[str, Any]]] = None):
+                 config_loader: Optional[Callable[[BinaryIO], Dict[str, Any]]] = None,
+                 **kwargs):
         # Auto-detect physical CPU cores (reserve 2 for OS)
         self.total_physical = os.cpu_count() or 4
         self.safe_capacity = max(1, self.total_physical - 2)
@@ -43,8 +41,7 @@ class ParallelConfigRunner(ParallelRunner):
             max_workers = self.total_physical
 
         super().__init__(config_file, workspace, max_workers,
-                         execution_mode, test_case_filter,
-                         history_dir, regression_threshold)
+                         execution_mode, **kwargs)
         self._config_loader = config_loader
         # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
