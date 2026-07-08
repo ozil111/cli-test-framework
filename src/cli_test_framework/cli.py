@@ -22,6 +22,18 @@ from .utils.junit_xml_writer import write_junit_xml
 logger = logging.getLogger("cli_test_framework.cli")
 
 
+def _parse_vars(var_list):
+    """Parse ``['solver=/path', 'model=./m.dat']`` → ``{'solver': '/path', ...}``."""
+    variables = {}
+    for item in var_list or []:
+        if '=' not in item:
+            logger.warning("Ignoring invalid --var '%s' (expected KEY=VALUE)", item)
+            continue
+        key, _, value = item.partition('=')
+        variables[key.strip()] = value.strip()
+    return variables
+
+
 def create_parser():
     """Create and configure the argument parser"""
     parser = argparse.ArgumentParser(
@@ -61,6 +73,11 @@ Examples:
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     run_parser.add_argument('--junit-xml', dest='junit_xml',
                            help='Write JUnit XML report to the specified file path')
+    run_parser.add_argument('--var', action='append', default=[],
+                           metavar='KEY=VALUE',
+                           help='Set a variable for config placeholder substitution, '
+                                'e.g. --var solver=/path/to/solver '
+                                '(can be used multiple times)')
 
     # ---- Compare command ----
     compare_parser = subparsers.add_parser('compare', help='Compare two files')
@@ -136,6 +153,8 @@ def run_tests(args):
     # construct Namespace objects without the newer arguments.
     history_dir = getattr(args, 'history_dir', None)
     regression_threshold = getattr(args, 'regression_threshold', 1.5)
+    var_list = getattr(args, 'var', [])
+    variables = _parse_vars(var_list)
 
     try:
         if args.parallel:
@@ -150,6 +169,7 @@ def run_tests(args):
                     test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
+                    variables=variables,
                 )
             elif file_ext in ['.yaml', '.yml']:
                 runner = ParallelYAMLRunner(
@@ -161,6 +181,7 @@ def run_tests(args):
                     test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
+                    variables=variables,
                 )
             else:
                 logger.error("Unsupported configuration file format for parallel mode: %s", file_ext)
@@ -175,6 +196,7 @@ def run_tests(args):
                     test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
+                    variables=variables,
                 )
             elif file_ext in ['.yaml', '.yml']:
                 runner = YAMLRunner(
@@ -184,6 +206,7 @@ def run_tests(args):
                     test_case_tag_filter=args.tag,
                     history_dir=history_dir,
                     regression_threshold=regression_threshold,
+                    variables=variables,
                 )
             else:
                 logger.error("Unsupported configuration file format: %s", file_ext)

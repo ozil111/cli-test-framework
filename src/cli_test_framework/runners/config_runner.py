@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Dict, Any, Callable, BinaryIO
 
 from ..core.base_runner import BaseRunner
-from ..core.config_loader import parse_test_cases
+from ..core.config_loader import parse_test_cases, substitute_placeholders
 from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
@@ -30,9 +30,11 @@ class ConfigRunner(BaseRunner):
     def __init__(self, config_file: str = "test_cases.json",
                  workspace: Optional[str] = None,
                  config_loader: Optional[Callable[[BinaryIO], Dict[str, Any]]] = None,
+                 variables: Optional[Dict[str, Any]] = None,
                  **kwargs):
         super().__init__(config_file, workspace, **kwargs)
         self._config_loader = config_loader
+        self._variables = variables or {}
         # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
 
@@ -45,6 +47,8 @@ class ConfigRunner(BaseRunner):
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = self._config_loader(f)
+
+            config = substitute_placeholders(config, self._variables)
 
             self.load_setup_from_config(config)
             self.test_cases = parse_test_cases(

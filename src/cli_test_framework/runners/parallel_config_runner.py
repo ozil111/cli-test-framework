@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Dict, Any, Callable, BinaryIO
 
 from ..core.parallel_runner import ParallelRunner, AtomicSemaphore
-from ..core.config_loader import parse_test_cases, execute_sequence
+from ..core.config_loader import parse_test_cases, execute_sequence, substitute_placeholders
 from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
@@ -32,6 +32,7 @@ class ParallelConfigRunner(ParallelRunner):
                  max_workers: Optional[int] = None,
                  execution_mode: str = "thread",
                  config_loader: Optional[Callable[[BinaryIO], Dict[str, Any]]] = None,
+                 variables: Optional[Dict[str, Any]] = None,
                  **kwargs):
         # Auto-detect physical CPU cores (reserve 2 for OS)
         self.total_physical = os.cpu_count() or 4
@@ -43,6 +44,7 @@ class ParallelConfigRunner(ParallelRunner):
         super().__init__(config_file, workspace, max_workers,
                          execution_mode, **kwargs)
         self._config_loader = config_loader
+        self._variables = variables or {}
         # Backward-compatible attribute for tests that patch path_resolver
         self.path_resolver = PathResolver(self.workspace)
 
@@ -120,6 +122,8 @@ class ParallelConfigRunner(ParallelRunner):
         try:
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = self._config_loader(f)
+
+            config = substitute_placeholders(config, self._variables)
 
             self.load_setup_from_config(config)
             self.test_cases = parse_test_cases(
