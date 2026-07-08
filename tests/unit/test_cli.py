@@ -109,3 +109,49 @@ def test_main_exits_nonzero_without_command(monkeypatch):
 
     assert exc.value.code == 1
 
+
+def test_parse_vars_single():
+    result = cli._parse_vars(["solver=/opt/solver"])
+    assert result == {"solver": "/opt/solver"}
+
+
+def test_parse_vars_multiple():
+    result = cli._parse_vars(["solver=/opt/solver", "model=./data.dat"])
+    assert result == {"solver": "/opt/solver", "model": "./data.dat"}
+
+
+def test_parse_vars_empty():
+    result = cli._parse_vars([])
+    assert result == {}
+
+
+def test_parse_vars_invalid_warns(caplog):
+    result = cli._parse_vars(["bad_entry"])
+    assert result == {}
+    assert "Ignoring invalid --var" in caplog.text
+
+
+def test_parse_vars_key_with_spaces():
+    result = cli._parse_vars([" solver = /opt/solver "])
+    assert result == {"solver": "/opt/solver"}
+
+
+def test_run_tests_passes_variables_to_runner(tmp_path, monkeypatch):
+    config = tmp_path / "cases.json"
+    config.write_text('{"test_cases": []}', encoding="utf-8")
+    captured = {}
+
+    class VarRunner(DummyRunner):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            captured.update(kwargs)
+
+        def run_tests(self):
+            return True
+
+    monkeypatch.setattr(cli, "JSONRunner", VarRunner)
+
+    cli.run_tests(make_args(config, var=["solver=/opt/solver"]))
+
+    assert captured.get("variables") == {"solver": "/opt/solver"}
+

@@ -11,6 +11,7 @@ Backward-compatible: the runner classes still expose ``load_test_cases()`` and
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -19,6 +20,40 @@ from .execution import execute_single_test_case
 from ..utils.path_resolver import resolve_paths
 
 logger = logging.getLogger("cli_test_framework.core.config_loader")
+
+# ---------------------------------------------------------------------------
+# Placeholder substitution
+# ---------------------------------------------------------------------------
+
+_PLACEHOLDER_RE = re.compile(r'\{(\w+)\}')
+
+
+def substitute_placeholders(
+    config: Dict[str, Any],
+    variables: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """递归替换 config 中字符串值的 ``{placeholder}`` 占位符。
+
+    只替换 ``variables`` 中存在的 key，未匹配的 ``{xxx}`` 原样保留，
+    不会影响 ``expected.matches`` 等字段中的正则模式（如 ``{2}``）。
+    """
+    if not variables:
+        return config
+
+    def _sub(value: Any) -> Any:
+        if isinstance(value, str):
+            return _PLACEHOLDER_RE.sub(
+                lambda m: str(variables[m.group(1)])
+                if m.group(1) in variables else m.group(0),
+                value,
+            )
+        if isinstance(value, list):
+            return [_sub(item) for item in value]
+        if isinstance(value, dict):
+            return {k: _sub(v) for k, v in value.items()}
+        return value
+
+    return _sub(config)
 
 
 # ---------------------------------------------------------------------------

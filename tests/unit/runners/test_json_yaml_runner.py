@@ -82,6 +82,56 @@ class TestYAMLRunner(unittest.TestCase):
         self.temp_dir.cleanup()
 
 
+class TestPlaceholderSubstitution(unittest.TestCase):
+    """Integration test: verify that variables flow through runner's load_test_cases."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        config = {
+            "test_cases": [
+                {
+                    "name": "placeholder-test",
+                    "command": "{solver}",
+                    "args": ["--input", "{flag}"],
+                    "expected": {"return_code": 0},
+                }
+            ]
+        }
+        self.config_path = Path(self.temp_dir.name) / "placeholder_config.json"
+        self.config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    def test_placeholders_substituted_in_loaded_cases(self):
+        runner = JSONRunner(
+            str(self.config_path),
+            workspace=self.temp_dir.name,
+            variables={"solver": "/usr/bin/solver", "flag": "--verbose"},
+        )
+        runner.load_test_cases()
+
+        self.assertEqual(len(runner.test_cases), 1)
+        case = runner.test_cases[0]
+        self.assertIn("/usr/bin/solver", case.command)
+        self.assertIn("--verbose", case.args)
+        self.assertNotIn("{solver}", case.command)
+        self.assertNotIn("{flag}", case.args)
+
+    def test_no_variables_still_works(self):
+        """Without variables, placeholders should remain as-is."""
+        runner = JSONRunner(
+            str(self.config_path),
+            workspace=self.temp_dir.name,
+        )
+        runner.load_test_cases()
+
+        self.assertEqual(len(runner.test_cases), 1)
+        case = runner.test_cases[0]
+        self.assertIn("{solver}", case.command)
+        self.assertIn("{flag}", case.args)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+
 if __name__ == "__main__":
     unittest.main()
 

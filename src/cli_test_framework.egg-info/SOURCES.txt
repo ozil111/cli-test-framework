@@ -130,12 +130,14 @@ tests/unit/commands/test_compare_command.py
 tests/unit/commands/__pycache__/test_compare_command.cpython-312-pytest-7.4.4.pyc
 tests/unit/commands/__pycache__/test_compare_command.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/test_assertions.py
+tests/unit/core/test_config_loader.py
 tests/unit/core/test_execution.py
 tests/unit/core/test_history_store.py
 tests/unit/core/test_process_worker.py
 tests/unit/core/test_setup.py
 tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-9.0.3.pyc
+tests/unit/core/__pycache__/test_config_loader.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_execution.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-9.0.3.pyc
@@ -149,6 +151,7 @@ tests/unit/runners/test_test_case_filter.py
 tests/unit/runners/test_test_case_tag_filter.py
 tests/unit/runners/__pycache__/test_json_yaml_runner.cpython-312-pytest-7.4.4.pyc
 tests/unit/runners/__pycache__/test_json_yaml_runner.cpython-312-pytest-9.0.3.pyc
+tests/unit/runners/__pycache__/test_json_yaml_runner.cpython-312.pyc
 tests/unit/runners/__pycache__/test_json_yaml_runner.cpython-39-pytest-8.3.4.pyc
 tests/unit/runners/__pycache__/test_test_case_filter.cpython-312-pytest-7.4.4.pyc
 tests/unit/runners/__pycache__/test_test_case_filter.cpython-312-pytest-9.0.3.pyc

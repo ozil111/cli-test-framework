@@ -5,6 +5,7 @@
 - [安装](#安装)
 - [测试用例定义](#测试用例定义)
 - [运行测试](#运行测试)
+- [占位符（变量替换）](#占位符变量替换)
 - [标签过滤](#标签过滤)
 - [Setup 模块](#setup-模块)
 - [并行测试](#并行测试)
@@ -244,6 +245,99 @@ runner.results["failed"]
 for detail in runner.results["details"]:
     print(detail["name"], detail["status"], detail.get("message", ""))
 ```
+
+## 占位符（变量替换）
+
+当同一个配置文件需要在不同环境下使用不同参数（如求解器路径、模型文件路径等）时，可以用 `{变量名}` 占位符编写配置，运行时通过 `--var` 或 `variables` 参数传入实际值。
+
+### 编写含占位符的配置
+
+JSON：
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "求解器测试",
+            "command": "{solver}",
+            "args": ["--input", "{model}", "--output", "{output}"],
+            "expected": { "return_code": 0 }
+        }
+    ]
+}
+```
+
+YAML：
+
+```yaml
+test_cases:
+  - name: 求解器测试
+    command: "{solver}"
+    args: ["--input", "{model}", "--output", "{output}"]
+    expected:
+      return_code: 0
+```
+
+占位符 `{变量名}` 可出现在配置文件的任意字符串值中，包括 `command`、`args`、`name`、`expected.output_contains` 等。支持同一个字符串中使用多个占位符，如 `"{solver} --input {model}"`。
+
+> **安全设计**：只有 `variables` 字典中存在的 key 才会被替换。`{xxx}` 若无匹配不会报错，而是原样保留。因此 `expected.output_matches` 中的正则模式（如 `{2,}`、`\d{4}`）不受影响。
+
+### 用法
+
+#### CLI
+
+```bash
+# 单个变量
+cli-test run test_cases.json --var solver=/opt/solver/bin/solver.exe
+
+# 多个变量
+cli-test run test_cases.json --var solver=/opt/solver/bin/solver.exe --var model=./data/model.dat
+
+# 与并行模式、标签过滤等组合使用
+cli-test run test_cases.json --var solver=solver.exe --parallel --workers 4 --tag smoke
+```
+
+`--var` 格式为 `KEY=VALUE`，可多次使用。等号分隔，key 和 value 两侧的空格会被自动去除。
+
+#### Python API
+
+```python
+from cli_test_framework.runners import JSONRunner, YAMLRunner, ParallelJSONRunner, ParallelYAMLRunner
+
+# 顺序运行
+runner = JSONRunner(
+    config_file="test_cases.json",
+    variables={
+        "solver": "/opt/solver/bin/solver.exe",
+        "model": "./data/model.dat",
+        "output": "./results/output.dat",
+    },
+)
+success = runner.run_tests()
+
+# 并行运行
+runner = ParallelJSONRunner(
+    config_file="test_cases.json",
+    variables={"solver": "/opt/solver/bin/solver.exe"},
+)
+success = runner.run_tests()
+
+# YAML 同样支持
+runner = YAMLRunner(
+    config_file="test_cases.yaml",
+    variables={"solver": "/opt/solver/bin/solver.exe"},
+)
+success = runner.run_tests()
+```
+
+### 适用场景
+
+| 场景 | 示例 |
+|---|---|
+| 不同求解器版本测试 | `--var solver=v1.0/solver.exe` ↔ `--var solver=v2.0/solver.exe` |
+| 不同输入数据 | `--var model=case_1.dat` ↔ `--var model=case_2.dat` |
+| CI/CD 环境适配 | 本地 `/opt/solver.exe`，CI `/runner/solver.exe` |
+| 多平台路径 | Windows `--var solver=C:\solver.exe`，Linux `--var solver=/opt/solver.exe` |
 
 ## 标签过滤
 
