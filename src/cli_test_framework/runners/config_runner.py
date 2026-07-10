@@ -46,6 +46,10 @@ class ConfigRunner(BaseRunner):
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = self._config_loader(f)
 
+            # Expand import references (no-op if none present)
+            from ..config.import_expander import expand_imports
+            config = expand_imports(config, self.config_path)
+
             self.load_setup_from_config(config)
             self.test_cases = parse_test_cases(
                 config, self.workspace, self.path_resolver,

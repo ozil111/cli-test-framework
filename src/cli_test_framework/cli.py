@@ -32,6 +32,7 @@ Examples:
   cli-test run test_cases.json
   cli-test run test_cases.json --parallel --workers 4
   cli-test run test_cases.yaml --workspace /path/to/project
+  cli-test validate main_config.json
   cli-test compare file1.json file2.json
   cli-test compare file1.txt file2.txt --output-format json
         """
@@ -61,6 +62,17 @@ Examples:
     run_parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     run_parser.add_argument('--junit-xml', dest='junit_xml',
                            help='Write JUnit XML report to the specified file path')
+
+    # ---- Validate command ----
+    validate_parser = subparsers.add_parser(
+        'validate', help='Validate test configuration without running tests'
+    )
+    validate_parser.add_argument(
+        'config_file', help='Path to the test configuration file (JSON or YAML)'
+    )
+    validate_parser.add_argument(
+        '--workspace', '-w', help='Working directory'
+    )
 
     # ---- Compare command ----
     compare_parser = subparsers.add_parser('compare', help='Compare two files')
@@ -264,6 +276,41 @@ def run_compare(args):
     return bool(exit_code == 0)
 
 
+def run_validate(args):
+    """Validate test configuration without running tests."""
+    from .config.config_io import validate_config
+
+    workspace_path = Path(args.workspace) if args.workspace else Path.cwd()
+    config_file = (workspace_path / args.config_file).resolve()
+
+    if not config_file.exists():
+        logger.error("Configuration file not found: %s", config_file)
+        return False
+
+    logger.info("Validating configuration: %s", config_file)
+    report = validate_config(config_file, args.workspace)
+
+    # Print summary
+    summary = report["summary"]
+    print(f"\n  [OK] Loaded {summary['cases']} test cases from {summary['files']} file(s)\n")
+
+    if report["errors"]:
+        for err in report["errors"]:
+            print(f"  [FAIL] {err}")
+        print()
+    else:
+        print("  [OK] All required fields present")
+        print("  [OK] No circular imports detected")
+
+    if summary.get("files_loaded"):
+        print("\n  Files:")
+        for f in summary["files_loaded"]:
+            print(f"    - {f}")
+    print()
+
+    return report["valid"]
+
+
 def main():
     """Main entry point for the CLI"""
     parser = create_parser()
@@ -277,6 +324,9 @@ def main():
 
     if args.command == 'run':
         success = run_tests(args)
+        sys.exit(0 if success else 1)
+    elif args.command == 'validate':
+        success = run_validate(args)
         sys.exit(0 if success else 1)
     elif args.command == 'compare':
         success = run_compare(args)
