@@ -15,6 +15,7 @@ from ..core.test_case import TestCase
 from ..core.execution import execute_single_test_case
 from ..core.types import TestCaseData
 from ..utils.path_resolver import PathResolver
+from ..config.import_expander import expand_imports
 
 logger = logging.getLogger("cli_test_framework.runners.parallel_config_runner")
 
@@ -123,6 +124,8 @@ class ParallelConfigRunner(ParallelRunner):
             with open(self.config_path, 'r', encoding='utf-8') as f:
                 config = self._config_loader(f)
 
+            # Expand import references (no-op if none present)
+            config = expand_imports(config, self.config_path)
             config = substitute_placeholders(config, self._variables)
 
             self.load_setup_from_config(config)

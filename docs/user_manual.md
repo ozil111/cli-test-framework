@@ -4,6 +4,8 @@
 
 - [安装](#安装)
 - [测试用例定义](#测试用例定义)
+- [配置拆分机制](#配置拆分机制)
+- [配置校验](#配置校验)
 - [运行测试](#运行测试)
 - [占位符（变量替换）](#占位符变量替换)
 - [标签过滤](#标签过滤)
@@ -142,6 +144,148 @@ test_cases:
 }
 ```
 
+## 配置拆分机制
+
+当测试项目规模增长、用例数量达到数十甚至数百条时，单个配置文件可能变得难以维护。配置拆分机制允许将大文件按模块/功能拆分为多个子文件，通过 `import` 引用组装，运行时自动合并加载。
+
+### 主配置文件
+
+在主配置文件中，通过 `"import"` 字段引用子文件。`import` 是 `test_cases` 数组中的一个特殊元素，框架会在加载时将其**展开替换**为子文件的测试用例：
+
+```json
+{
+    "setup": {
+        "environment_variables": {
+            "PYTHONPATH": "./src"
+        }
+    },
+    "test_cases": [
+        {
+            "name": "内联测试用例",
+            "command": "echo",
+            "args": ["hello"],
+            "expected": { "return_code": 0 }
+        },
+        { "import": "cases/text_tests.json" },
+        { "import": "cases/json_tests.yaml" },
+        { "import": "cases/h5_tests.json" }
+    ]
+}
+```
+
+> **注意**：`import` 路径相对**主配置文件所在目录**解析，不相对当前工作目录（cwd）。这保证了配置文件的可移植性——无论从哪个目录运行测试，拆分关系都不受影响。
+
+### 子文件格式
+
+子文件结构与主文件一致，顶层同样是 `test_cases` 数组（可包含 `setup`）：
+
+```json
+{
+    "test_cases": [
+        {
+            "name": "text_identical",
+            "command": "python",
+            "args": ["./compare_text.py"],
+            "expected": { "return_code": 0 },
+            "tags": ["text"]
+        },
+        {
+            "name": "text_diff",
+            "command": "python",
+            "args": ["./compare_text.py", "--mode", "diff"],
+            "expected": { "return_code": 1 },
+            "tags": ["text"]
+        }
+    ]
+}
+```
+
+### 工作原理
+
+1. **加载时展开**：Runner 在读取配置文件后、解析 `TestCase` 对象前，自动执行 import 展开。对 Runner 和执行引擎**完全透明**，无需修改测试用例或 Runner 代码。
+2. **递归展开**：子文件内可以继续 `import` 其他文件，支持多层嵌套。
+3. **循环引用保护**：框架维护已加载文件路径集合，检测到循环引用时抛出明确错误。
+4. **向后兼容**：不含 `import` 字段的配置文件行为与之前完全一致，零迁移成本。
+
+### 跨格式支持
+
+主配置为 JSON 时可以 import YAML 子文件，反之亦然。框架根据子文件扩展名（`.json` / `.yaml` / `.yml`）自动选择解析器。
+
+### Setup 合并规则
+
+如果主文件和子文件都定义了 `setup`，它们会深度合并（deep merge）：
+- **同名变量冲突**：子文件的 `setup` 覆盖主文件的同名字段。
+- **环境变量**：合并为一个字典，子文件优先。
+
+```json
+// 主文件 setup
+{ "environment_variables": { "BASE": "from_main", "OVERRIDE": "from_main" } }
+
+// 子文件 setup
+{ "environment_variables": { "SUB_KEY": "from_sub", "OVERRIDE": "from_sub" } }
+
+// 合并结果
+{ "environment_variables": {
+    "BASE": "from_main",
+    "SUB_KEY": "from_sub",
+    "OVERRIDE": "from_sub"  // 子文件覆盖
+} }
+```
+
+### 渐进式迁移
+
+无需一次性迁移所有配置：
+1. 先用 `validate` 命令确认现有配置无问题（见[配置校验](#配置校验)）
+2. 逐步将大文件中的部分用例移到子文件，用 `import` 引用
+3. 内联用例与 import 引用可在同一个 `test_cases` 数组中混合使用
+
+## 配置校验
+
+`validate` 命令在不运行测试的情况下检查配置文件的正确性，适合在 CI 流水线中做配置合法性检查。
+
+### 用法
+
+```bash
+# 校验单个配置文件
+cli-test validate test_cases.json
+
+# 校验带 import 的主配置（自动展开并检查所有子文件）
+cli-test validate main_config.json
+
+# 指定工作目录
+cli-test validate test_cases.json --workspace /path/to/project
+```
+
+### 校验内容
+
+| 检查项 | 说明 |
+|---|---|
+| 语法正确性 | JSON/YAML 格式是否合法（加载时隐式检查） |
+| 必填字段 | 每条用例是否包含 `name`、`command`、`args`、`expected`（序列模式检查每个 step） |
+| import 引用 | 被引用的子文件是否存在 |
+| 循环引用 | import 链中是否存在 A→B→A 的循环 |
+
+### 输出示例
+
+成功时：
+```
+  [OK] Loaded 15 test cases from 3 file(s)
+  [OK] All required fields present
+  [OK] No circular imports detected
+
+  Files:
+    - /project/main_config.json
+    - /project/cases/text_tests.json
+    - /project/cases/json_tests.yaml
+```
+
+有错误时：
+```
+  [OK] Loaded 3 test cases from 1 file(s)
+  [FAIL] case 'bad_case': missing required field 'expected'
+  [FAIL] Import target not found: /project/cases/nonexistent.json
+```
+
 ## 运行测试
 
 ### 命令行
@@ -152,6 +296,9 @@ cli-test run test_cases.json
 
 # 运行 YAML 测试
 cli-test run test_cases.yaml
+
+# 运行带 import 拆分的主配置（自动展开子文件）
+cli-test run main_config.json
 
 # 指定工作目录
 cli-test run test_cases.json --workspace /path/to/project
