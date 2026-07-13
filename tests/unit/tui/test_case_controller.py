@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cli_test_framework.core.test_case import TestCase, TestCaseStep
+from cli_test_framework.core.config_loader import parse_test_cases
 from cli_test_framework.tui.controllers.case_controller import CaseController
 
 
@@ -373,10 +374,10 @@ class TestDirtyFlag:
 
 class TestParseFromDict:
     def test_single_cmd_case(self):
-        result = CaseController._parse_from_dict([
+        result = parse_test_cases({"test_cases": [
             {"name": "simple", "command": "echo", "args": ["hello"],
              "expected": {"return_code": 0}, "tags": ["demo"]},
-        ])
+        ]})
         assert len(result) == 1
         tc = result[0]
         assert tc.name == "simple"
@@ -385,13 +386,13 @@ class TestParseFromDict:
         assert tc.tags == ["demo"]
 
     def test_sequence_case(self):
-        result = CaseController._parse_from_dict([
+        result = parse_test_cases({"test_cases": [
             {"name": "seq",
              "steps": [
                  {"command": "step1", "args": ["a"], "expected": {}},
                  {"command": "step2", "args": ["b"], "expected": {"return_code": 1}},
              ]},
-        ])
+        ]})
         assert len(result) == 1
         tc = result[0]
         assert tc.name == "seq"
@@ -401,9 +402,9 @@ class TestParseFromDict:
         assert tc.steps[1].expected == {"return_code": 1}
 
     def test_missing_fields_get_defaults(self):
-        result = CaseController._parse_from_dict([
+        result = parse_test_cases({"test_cases": [
             {"name": "minimal"},
-        ])
+        ]})
         tc = result[0]
         assert tc.command == ""
         assert tc.args == []
@@ -412,13 +413,13 @@ class TestParseFromDict:
         assert tc.description == ""
 
     def test_empty_list(self):
-        assert CaseController._parse_from_dict([]) == []
+        assert parse_test_cases({"test_cases": []}) == []
 
     def test_step_timeout(self):
-        result = CaseController._parse_from_dict([
+        result = parse_test_cases({"test_cases": [
             {"name": "with_timeout",
              "steps": [{"command": "sleep", "args": ["10"], "expected": {},
                         "timeout": 30.0}]},
-        ])
+        ]})
         tc = result[0]
         assert tc.steps[0].timeout == 30.0

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...core.test_case import TestCase, TestCaseStep
 from ...core.execution import execute_single_test_case
+from ...core.config_loader import parse_test_cases, execute_sequence
 from ...config.config_io import load_config, save_config
 
 logger = logging.getLogger("cli_test_framework.tui.controller")
@@ -140,48 +141,10 @@ class CaseController:
         self._file_path = path
         self._workspace = workspace
 
-        # Parse test cases directly from dict (skip path resolution for TUI display)
-        from ...core.test_case import TestCaseStep
-        import json
-
-        self._cases = self._parse_from_dict(config.get("test_cases", []))
+        # Parse test cases via unified entry point (skip path resolution for TUI display)
+        self._cases = parse_test_cases(config)
         self._dirty = False
         return len(self._cases)
-
-    @staticmethod
-    def _parse_from_dict(cases_list: List[Dict[str, Any]]) -> List[TestCase]:
-        """Parse test case dicts into TestCase objects (lightweight, no path resolution)."""
-        result: List[TestCase] = []
-        for case in cases_list:
-            if "steps" in case:
-                steps = [
-                    TestCaseStep(
-                        command=s.get("command", ""),
-                        args=s.get("args", []),
-                        expected=s.get("expected", {}),
-                        timeout=s.get("timeout"),
-                    )
-                    for s in case["steps"]
-                ]
-                result.append(TestCase(
-                    name=case.get("name", ""),
-                    steps=steps,
-                    description=case.get("description", ""),
-                    resources=case.get("resources"),
-                    tags=case.get("tags", []),
-                ))
-            else:
-                result.append(TestCase(
-                    name=case.get("name", ""),
-                    command=case.get("command", ""),
-                    args=case.get("args", []),
-                    expected=case.get("expected", {}),
-                    description=case.get("description", ""),
-                    timeout=case.get("timeout"),
-                    resources=case.get("resources"),
-                    tags=case.get("tags", []),
-                ))
-        return result
 
     def save(self, file_path: Optional[str] = None) -> None:
         """Persist cases to the current file (or *file_path* if given)."""
@@ -287,31 +250,17 @@ class CaseController:
     def run_case(self, index: int) -> Dict[str, Any]:
         """Execute a single test case and return the result dict."""
         case = self._cases[index]
-        case_data: Dict[str, Any] = {
-            "name": case.name,
-            "command": case.command,
-            "args": [str(a) for a in case.args],
-            "expected": case.expected,
-            "description": case.description,
-            "timeout": case.timeout,
-            "resources": case.resources,
-        }
         if case.steps:
-            # Use the first step's command as a preview; actual execution
-            # delegates to the runner's sequence handler.
-            case_data["command"] = case.steps[0].command if case.steps else ""
-            case_data["args"] = case.steps[0].args if case.steps else []
-            case_data["steps"] = [
-                {
-                    "command": s.command,
-                    "args": s.args,
-                    "expected": s.expected,
-                    "timeout": s.timeout,
-                }
-                for s in case.steps
-            ]
-
-        return execute_single_test_case(case_data, self._workspace)
+            # Sequence mode — use execute_sequence (consistent with Runner)
+            return execute_sequence(
+                case_name=case.name,
+                steps=case.steps,
+                workspace=self._workspace,
+            )
+        # Single-command mode — unified to_execution_dict()
+        return execute_single_test_case(
+            case.to_execution_dict(), self._workspace
+        )
 
     @staticmethod
     def create_empty_case(mode: str = "single") -> TestCase:
