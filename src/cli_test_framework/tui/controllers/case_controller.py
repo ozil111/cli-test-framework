@@ -1,0 +1,321 @@
+"""Bridge between config I/O and the TUI: CRUD, search, run."""
+
+from __future__ import annotations
+
+import copy
+import logging
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from ...core.test_case import TestCase, TestCaseStep
+from ...core.execution import execute_single_test_case
+from ...config.config_io import load_config, save_config
+
+logger = logging.getLogger("cli_test_framework.tui.controller")
+
+# ---------------------------------------------------------------------------
+# Search helpers
+# ---------------------------------------------------------------------------
+
+# Field weights for fuzzy scoring (higher = more important).
+_FIELD_WEIGHTS: Dict[str, float] = {
+    "name": 2.0,
+    "command": 1.5,
+    "tags": 1.0,
+    "description": 1.0,
+    "args": 0.5,
+}
+
+# Default searchable fields and their extractors
+_SEARCH_FIELDS = [
+    ("name", lambda tc: tc.name),
+    ("command", lambda tc: tc.command),
+    ("args", lambda tc: " ".join(tc.args)),
+    ("tags", lambda tc: ",".join(tc.tags)),
+    ("description", lambda tc: tc.description or ""),
+]
+
+
+def _substring_match(query: str, case: TestCase) -> bool:
+    """Case-insensitive substring match across all searchable fields."""
+    q = query.lower()
+    for _field_name, extractor in _SEARCH_FIELDS:
+        if q in extractor(case).lower():
+            return True
+    return False
+
+
+def _regex_match(query: str, case: TestCase) -> bool:
+    """Regex search across all searchable fields (case-insensitive)."""
+    try:
+        pattern = re.compile(query, re.IGNORECASE)
+    except re.error:
+        return False
+    for _field_name, extractor in _SEARCH_FIELDS:
+        if pattern.search(extractor(case)):
+            return True
+    return False
+
+
+def _fuzzy_score(query: str, case: TestCase) -> float:
+    """N-gram overlap scorer; higher = better match."""
+    q = query.lower()
+    q_bigrams = {q[i : i + 2] for i in range(len(q) - 1)} if len(q) >= 2 else {q}
+    if not q_bigrams:
+        return 0.0
+
+    total = 0.0
+    for field_name, extractor in _SEARCH_FIELDS:
+        text = extractor(case).lower()
+        text_bigrams = {text[i : i + 2] for i in range(len(text) - 1)}
+        if not text_bigrams:
+            continue
+        overlap = len(q_bigrams & text_bigrams) / len(q_bigrams)
+        total += _FIELD_WEIGHTS.get(field_name, 0.5) * overlap
+    return total
+
+
+def _fuzzy_match(query: str, cases: List[TestCase], threshold: float = 0.15) -> List[int]:
+    """Return indices of cases whose fuzzy score meets *threshold*."""
+    scored: List[Tuple[int, float]] = []
+    for i, tc in enumerate(cases):
+        s = _fuzzy_score(query, tc)
+        if s >= threshold:
+            scored.append((i, s))
+    scored.sort(key=lambda x: -x[1])
+    return [idx for idx, _ in scored]
+
+
+# ---------------------------------------------------------------------------
+# CaseController
+# ---------------------------------------------------------------------------
+
+
+class CaseController:
+    """Holds test cases in memory and bridges config_io ↔ TUI."""
+
+    def __init__(self):
+        self._cases: List[TestCase] = []
+        self._file_path: Optional[Path] = None
+        self._workspace: Optional[str] = None
+        self._dirty = False
+        self._setup: Dict[str, Any] = {}
+
+    # -- properties ----------------------------------------------------------
+
+    @property
+    def cases(self) -> List[TestCase]:
+        return self._cases
+
+    @property
+    def file_path(self) -> Optional[Path]:
+        return self._file_path
+
+    @property
+    def file_name(self) -> str:
+        return self._file_path.name if self._file_path else "(untitled)"
+
+    @property
+    def workspace(self) -> Optional[str]:
+        return self._workspace
+
+    @property
+    def dirty(self) -> bool:
+        return self._dirty
+
+    @property
+    def case_count(self) -> int:
+        return len(self._cases)
+
+    # -- load / save ---------------------------------------------------------
+
+    def load(self, file_path: str, workspace: Optional[str] = None) -> int:
+        """Load config from *file_path*, parse test cases, return case count."""
+        path = Path(file_path).resolve()
+        config = load_config(path)
+
+        # Store setup for later re-serialisation
+        self._setup = config.get("setup", {})
+        self._file_path = path
+        self._workspace = workspace
+
+        # Parse test cases directly from dict (skip path resolution for TUI display)
+        from ...core.test_case import TestCaseStep
+        import json
+
+        self._cases = self._parse_from_dict(config.get("test_cases", []))
+        self._dirty = False
+        return len(self._cases)
+
+    @staticmethod
+    def _parse_from_dict(cases_list: List[Dict[str, Any]]) -> List[TestCase]:
+        """Parse test case dicts into TestCase objects (lightweight, no path resolution)."""
+        result: List[TestCase] = []
+        for case in cases_list:
+            if "steps" in case:
+                steps = [
+                    TestCaseStep(
+                        command=s.get("command", ""),
+                        args=s.get("args", []),
+                        expected=s.get("expected", {}),
+                        timeout=s.get("timeout"),
+                    )
+                    for s in case["steps"]
+                ]
+                result.append(TestCase(
+                    name=case.get("name", ""),
+                    steps=steps,
+                    description=case.get("description", ""),
+                    resources=case.get("resources"),
+                    tags=case.get("tags", []),
+                ))
+            else:
+                result.append(TestCase(
+                    name=case.get("name", ""),
+                    command=case.get("command", ""),
+                    args=case.get("args", []),
+                    expected=case.get("expected", {}),
+                    description=case.get("description", ""),
+                    timeout=case.get("timeout"),
+                    resources=case.get("resources"),
+                    tags=case.get("tags", []),
+                ))
+        return result
+
+    def save(self, file_path: Optional[str] = None) -> None:
+        """Persist cases to the current file (or *file_path* if given)."""
+        target = Path(file_path) if file_path else self._file_path
+        if target is None:
+            raise ValueError("No file path set for save.")
+
+        config: Dict[str, Any] = {"test_cases": []}
+        if self._setup:
+            config["setup"] = self._setup
+        config["test_cases"] = [tc.to_dict() for tc in self._cases]
+
+        save_config(config, target)
+
+        if file_path:
+            self._file_path = Path(file_path).resolve()
+
+        self._dirty = False
+
+    def save_as(self, file_path: str) -> None:
+        """Save to a different file."""
+        self.save(file_path=file_path)
+
+    # -- CRUD ----------------------------------------------------------------
+
+    def get_case(self, index: int) -> TestCase:
+        return self._cases[index]
+
+    def add_case(self, case: TestCase) -> int:
+        """Append *case*; return its index."""
+        self._cases.append(case)
+        self._dirty = True
+        return len(self._cases) - 1
+
+    def update_case(self, index: int, case: TestCase) -> None:
+        self._cases[index] = case
+        self._dirty = True
+
+    def delete_case(self, index: int) -> None:
+        del self._cases[index]
+        self._dirty = True
+
+    def duplicate_case(self, index: int) -> int:
+        """Deep-copy case at *index*, append '_copy' to name."""
+        original = self._cases[index]
+        new_case = copy.deepcopy(original)
+        new_case.name = original.name + "_copy"
+        return self.add_case(new_case)
+
+    def move_case(self, from_idx: int, to_idx: int) -> None:
+        """Move case from *from_idx* to *to_idx*."""
+        if from_idx == to_idx:
+            return
+        case = self._cases.pop(from_idx)
+        self._cases.insert(to_idx, case)
+        self._dirty = True
+
+    def swap_cases(self, i: int, j: int) -> None:
+        self._cases[i], self._cases[j] = self._cases[j], self._cases[i]
+        self._dirty = True
+
+    # -- search --------------------------------------------------------------
+
+    def search(
+        self,
+        query: str,
+        mode: str = "substring",
+        tag: Optional[str] = None,
+    ) -> List[int]:
+        """Return sorted list of indices for cases matching *query*.
+
+        Parameters
+        ----------
+        query:
+            Search term.
+        mode:
+            ``"substring"`` (default), ``"fuzzy"``, or ``"regex"``.
+        tag:
+            Optional tag filter (exact match).
+        """
+        if mode == "fuzzy":
+            indices = _fuzzy_match(query, self._cases)
+        elif mode == "regex":
+            indices = [i for i, tc in enumerate(self._cases) if _regex_match(query, tc)]
+        else:  # substring (default)
+            indices = [i for i, tc in enumerate(self._cases) if _substring_match(query, tc)]
+
+        # Apply tag filter
+        if tag:
+            indices = [i for i in indices if tag in self._cases[i].tags]
+
+        return indices
+
+    def get_all_tags(self) -> List[str]:
+        """Collect unique tags across all cases, sorted."""
+        tags: set = set()
+        for tc in self._cases:
+            tags.update(tc.tags)
+        return sorted(tags)
+
+    # -- run ----------------------------------------------------------------
+
+    def run_case(self, index: int) -> Dict[str, Any]:
+        """Execute a single test case and return the result dict."""
+        case = self._cases[index]
+        case_data: Dict[str, Any] = {
+            "name": case.name,
+            "command": case.command,
+            "args": [str(a) for a in case.args],
+            "expected": case.expected,
+            "description": case.description,
+            "timeout": case.timeout,
+            "resources": case.resources,
+        }
+        if case.steps:
+            # Use the first step's command as a preview; actual execution
+            # delegates to the runner's sequence handler.
+            case_data["command"] = case.steps[0].command if case.steps else ""
+            case_data["args"] = case.steps[0].args if case.steps else []
+            case_data["steps"] = [
+                {
+                    "command": s.command,
+                    "args": s.args,
+                    "expected": s.expected,
+                    "timeout": s.timeout,
+                }
+                for s in case.steps
+            ]
+
+        return execute_single_test_case(case_data, self._workspace)
+
+    @staticmethod
+    def create_empty_case(mode: str = "single") -> TestCase:
+        """Create a blank TestCase."""
+        if mode == "sequence":
+            return TestCase(name="new_case", steps=[])
+        return TestCase(name="new_case", command="", args=[], expected={}, tags=[])

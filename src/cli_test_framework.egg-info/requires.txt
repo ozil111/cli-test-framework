@@ -8,3 +8,6 @@ numpy>=1.21.0
 
 [:python_version >= "3.12"]
 numpy>=1.26.0
+
+[tui]
+textual>=0.40.0

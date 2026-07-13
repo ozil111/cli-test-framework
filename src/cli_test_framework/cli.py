@@ -44,6 +44,7 @@ Examples:
   cli-test run test_cases.json
   cli-test run test_cases.json --parallel --workers 4
   cli-test run test_cases.yaml --workspace /path/to/project
+  cli-test tui test_cases.json
   cli-test validate main_config.json
   cli-test compare file1.json file2.json
   cli-test compare file1.txt file2.txt --output-format json
@@ -79,6 +80,17 @@ Examples:
                            help='Set a variable for config placeholder substitution, '
                                 'e.g. --var solver=/path/to/solver '
                                 '(can be used multiple times)')
+
+    # ---- TUI command ----
+    tui_parser = subparsers.add_parser(
+        'tui', help='Launch interactive TUI for managing test cases'
+    )
+    tui_parser.add_argument(
+        'config_file', help='Path to the test configuration file (JSON or YAML)'
+    )
+    tui_parser.add_argument(
+        '--workspace', '-w', help='Working directory'
+    )
 
     # ---- Validate command ----
     validate_parser = subparsers.add_parser(
@@ -299,6 +311,13 @@ def run_compare(args):
     return bool(exit_code == 0)
 
 
+def run_tui(args):
+    """Launch the TUI manager."""
+    from .tui.app import run_tui as _run_tui
+
+    _run_tui(args.config_file, args.workspace)
+
+
 def run_validate(args):
     """Validate test configuration without running tests."""
     from .config.config_io import validate_config
@@ -348,6 +367,8 @@ def main():
     if args.command == 'run':
         success = run_tests(args)
         sys.exit(0 if success else 1)
+    elif args.command == 'tui':
+        run_tui(args)
     elif args.command == 'validate':
         success = run_validate(args)
         sys.exit(0 if success else 1)
