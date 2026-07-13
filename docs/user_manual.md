@@ -166,9 +166,9 @@ test_cases:
             "args": ["hello"],
             "expected": { "return_code": 0 }
         },
-        { "import": "cases/text_tests.json" },
+        { "import": "cases/text_tests.json", "tags": ["text"] },
         { "import": "cases/json_tests.yaml" },
-        { "import": "cases/h5_tests.json" }
+        { "import": "cases/h5_tests.json", "tags": ["h5", "fast"] }
     ]
 }
 ```
@@ -199,6 +199,24 @@ test_cases:
     ]
 }
 ```
+
+### Import 级标签（Tags）
+
+当一个子文件中的所有用例都标记有相同的标签（如 `"text"`）时，无需在每个 case 里重复编写 `tags`。可以直接在 `import` 条目上添加 `tags`，框架会自动将标签注入到该文件导入的每一条用例：
+
+```json
+{ "import": "cases/text_tests.json", "tags": ["text", "fast"] }
+```
+
+**合并规则**：
+
+| 场景 | 结果 |
+|---|---|
+| import 有 tags，子用例无 tags | 子用例继承 import 的所有 tags |
+| import 有 tags，子用例也有 tags | 合并去重，import 的 tags 在前，子用例自有的在后 |
+| import 无 tags | 行为不变，向后兼容 |
+
+> 嵌套 import（子文件内部继续 import 其他文件）也适用此规则——外层 import 的 tags 会注入到**所有**递推展开后的用例上。
 
 ### 工作原理
 

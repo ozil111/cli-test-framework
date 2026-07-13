@@ -139,6 +139,7 @@ tests/unit/__pycache__/test_cli.cpython-312-pytest-9.0.3.pyc
 tests/unit/__pycache__/test_config_io.cpython-312-pytest-9.0.3.pyc
 tests/unit/__pycache__/test_h5_comparator.cpython-312-pytest-7.4.4.pyc
 tests/unit/__pycache__/test_h5_comparator.cpython-312-pytest-9.0.3.pyc
+tests/unit/__pycache__/test_import_expander.cpython-312-pytest-7.4.4.pyc
 tests/unit/__pycache__/test_import_expander.cpython-312-pytest-9.0.3.pyc
 tests/unit/__pycache__/test_run_all.cpython-312-pytest-7.4.4.pyc
 tests/unit/__pycache__/test_run_all.cpython-312-pytest-9.0.3.pyc
