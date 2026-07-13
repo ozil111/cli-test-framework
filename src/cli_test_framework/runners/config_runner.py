@@ -67,15 +67,7 @@ class ConfigRunner(BaseRunner):
         if case.steps:
             return self._run_sequence(case)
 
-        case_data: TestCaseData = {
-            "name": case.name,
-            "command": case.command,
-            "args": case.args,
-            "expected": case.expected,
-            "description": case.description or None,
-            "timeout": case.timeout,
-            "resources": case.resources,
-        }
+        case_data = case.to_execution_dict()
 
         command_preview = (
             f"{case_data['command']} {' '.join(case_data['args'])}".strip()

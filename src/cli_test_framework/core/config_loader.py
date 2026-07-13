@@ -80,37 +80,51 @@ def _split_and_resolve(
 
 def parse_test_cases(
     config: Dict[str, Any],
-    workspace: Path,
-    path_resolver: Any,
+    workspace: Optional[Path] = None,
+    path_resolver: Any = None,
 ) -> List[TestCase]:
     """Parse ``config['test_cases']`` into a list of ``TestCase`` objects.
 
     Supports both single-command mode and sequence (``steps``) mode.
+
+    When *workspace* and *path_resolver* are provided (Runner mode),
+    required fields are validated and command/args paths are resolved.
+    When omitted (TUI mode), missing fields get sensible defaults and
+    raw values are kept as-is for display purposes.
     """
     cases: List[TestCase] = []
+    resolve = workspace is not None and path_resolver is not None
 
-    for case in config["test_cases"]:
+    for case in config.get("test_cases", []):
         if "steps" in case:
             # ── Sequence mode ──
             steps: List[TestCaseStep] = []
-            for step in case["steps"]:
-                step_required = ["command", "args", "expected"]
-                if not all(field in step for field in step_required):
-                    raise ValueError(
-                        f"Step in test case '{case.get('name', 'unnamed')}' "
-                        f"is missing required fields"
+            for step in case.get("steps", []):
+                if resolve:
+                    step_required = ["command", "args", "expected"]
+                    if not all(field in step for field in step_required):
+                        raise ValueError(
+                            f"Step in test case '{case.get('name', 'unnamed')}' "
+                            f"is missing required fields"
+                        )
+                    executable, resolved_args = _split_and_resolve(
+                        step["command"], step["args"], workspace, path_resolver
                     )
-                executable, resolved_args = _split_and_resolve(
-                    step["command"], step["args"], workspace, path_resolver
-                )
-                steps.append(TestCaseStep(
-                    command=executable,
-                    args=resolved_args,
-                    expected=step["expected"],
-                    timeout=step.get("timeout"),
-                ))
+                    steps.append(TestCaseStep(
+                        command=executable,
+                        args=resolved_args,
+                        expected=step["expected"],
+                        timeout=step.get("timeout"),
+                    ))
+                else:
+                    steps.append(TestCaseStep(
+                        command=step.get("command", ""),
+                        args=step.get("args", []),
+                        expected=step.get("expected", {}),
+                        timeout=step.get("timeout"),
+                    ))
             cases.append(TestCase(
-                name=case["name"],
+                name=case.get("name", ""),
                 steps=steps,
                 description=case.get("description", ""),
                 resources=case.get("resources"),
@@ -118,26 +132,37 @@ def parse_test_cases(
             ))
         else:
             # ── Single-command mode (backward-compatible) ──
-            required_fields = ["name", "command", "args", "expected"]
-            if not all(field in case for field in required_fields):
-                raise ValueError(
-                    f"Test case {case.get('name', 'unnamed')} "
-                    f"is missing required fields"
+            if resolve:
+                required_fields = ["name", "command", "args", "expected"]
+                if not all(field in case for field in required_fields):
+                    raise ValueError(
+                        f"Test case {case.get('name', 'unnamed')} "
+                        f"is missing required fields"
+                    )
+                executable, resolved_args = _split_and_resolve(
+                    case["command"], case["args"], workspace, path_resolver
                 )
-
-            executable, resolved_args = _split_and_resolve(
-                case["command"], case["args"], workspace, path_resolver
-            )
-            cases.append(TestCase(
-                name=case["name"],
-                command=executable,
-                args=resolved_args,
-                expected=case["expected"],
-                description=case.get("description", ""),
-                timeout=case.get("timeout"),
-                resources=case.get("resources"),
-                tags=case.get("tags", []),
-            ))
+                cases.append(TestCase(
+                    name=case["name"],
+                    command=executable,
+                    args=resolved_args,
+                    expected=case["expected"],
+                    description=case.get("description", ""),
+                    timeout=case.get("timeout"),
+                    resources=case.get("resources"),
+                    tags=case.get("tags", []),
+                ))
+            else:
+                cases.append(TestCase(
+                    name=case.get("name", ""),
+                    command=case.get("command", ""),
+                    args=case.get("args", []),
+                    expected=case.get("expected", {}),
+                    description=case.get("description", ""),
+                    timeout=case.get("timeout"),
+                    resources=case.get("resources"),
+                    tags=case.get("tags", []),
+                ))
 
     return cases
 

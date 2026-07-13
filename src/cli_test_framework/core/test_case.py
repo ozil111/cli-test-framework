@@ -45,3 +45,19 @@ class TestCase:
                 for s in self.steps
             ]
         return result
+
+    def to_execution_dict(self) -> Dict[str, Any]:
+        """Convert to the dict format expected by ``execute_single_test_case``.
+
+        Only for single-command mode; sequence cases should use
+        ``execute_sequence()`` instead.
+        """
+        return {
+            "name": self.name,
+            "command": self.command,
+            "args": self.args,
+            "expected": self.expected,
+            "description": self.description or None,
+            "timeout": self.timeout,
+            "resources": self.resources,
+        }
