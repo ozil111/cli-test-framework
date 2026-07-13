@@ -25,6 +25,7 @@ class CaseManagerApp(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True, priority=True),
+        Binding("q", "quit", "Quit", show=True, priority=True),
     ]
 
     CSS = """

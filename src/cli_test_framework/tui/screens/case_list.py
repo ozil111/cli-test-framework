@@ -27,6 +27,7 @@ class CaseListScreen(Screen):
         Binding("f6", "save_file", "Save", show=True),
         Binding("ctrl+s", "save_file", "Save", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
+        Binding("q", "quit", "Quit", show=True),
         Binding("n", "next_match", "Next", show=False),
         Binding("shift+enter", "prev_match", "Prev", show=False),
         Binding("up", "cursor_up", "", show=False),
