@@ -129,11 +129,14 @@ class BaseRunner(ABC):
             self.setup_manager.teardown_all()
 
     def _update_history(self) -> None:
-        """Update .symtest history with current run results and check for regressions."""
+        """Update .symtest history with successful run results and check for regressions."""
         if not self.history_dir:
             return
         history = load_history(self.history_dir)
         for result in self.results["details"]:
+            # Only record successful cases in history; skip failed ones
+            if result["status"] != "passed":
+                continue
             duration = result.get("duration", 0)
             # Check regression BEFORE updating (compare against old avg)
             warning = check_regression(history, result["name"], duration, self.regression_threshold)
