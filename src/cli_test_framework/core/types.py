@@ -37,6 +37,7 @@ class TestCaseData(TypedDict):
     description: Optional[str]
     timeout: Optional[float]
     resources: Optional[ResourceRequirements]
+    retry_count: int
 
 
 class SetupConfig(TypedDict):

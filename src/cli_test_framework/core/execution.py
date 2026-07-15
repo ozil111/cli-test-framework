@@ -3,10 +3,13 @@ import signal
 import time
 import os
 import shlex
+import logging
 from typing import Any, List, Optional, Dict
 
 from .assertions import Assertions
 from .types import ExpectedResult, TestCaseData, TestResultData
+
+logger = logging.getLogger("cli_test_framework.core.execution")
 
 # Commands that are shell builtins (not real executables).
 # With shell=False, these must be wrapped via the platform shell.
@@ -80,15 +83,12 @@ def _dispatch_file_compare(
     )
 
 
-def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None, env: Optional[Dict[str, str]] = None) -> TestResultData:
-    """
-    Stateless execution of a single test case.
-    
-    Args:
-        case: Test case data
-        workspace: Working directory for test execution
-        env: Optional environment variables to inject/override (merged with os.environ)
-    """
+def _execute_command_once(
+    case: TestCaseData,
+    workspace: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
+) -> TestResultData:
+    """Execute a single command once (no retry logic)."""
     start_time = time.time()
     cmd_list = _normalize_cmd_list(case["command"], [str(arg) for arg in case["args"]])
     timeout_limit = case.get("timeout", 3600)
@@ -156,4 +156,44 @@ def execute_single_test_case(case: TestCaseData, workspace: Optional[str] = None
         result["duration"] = time.time() - start_time
 
     return result
+
+
+def execute_single_test_case(
+    case: TestCaseData,
+    workspace: Optional[str] = None,
+    env: Optional[Dict[str, str]] = None,
+) -> TestResultData:
+    """
+    Stateless execution of a single test case with optional retry.
+
+    Args:
+        case: Test case data (may include ``retry_count`` for automatic retries).
+        workspace: Working directory for test execution.
+        env: Optional environment variables to inject/override (merged with os.environ).
+
+    ``retry_count`` (defaults to 0) controls how many additional times the
+    command is re-run after the first failure.  ``retry_count=0`` means no
+    retry (behaviour identical to previous versions).
+    """
+    retry_count: int = case.get("retry_count", 0)
+    max_attempts = retry_count + 1
+    total_duration = 0.0
+    last_result: Optional[TestResultData] = None
+
+    for attempt in range(1, max_attempts + 1):
+        result = _execute_command_once(case, workspace, env)
+        total_duration += result["duration"]
+        last_result = result
+
+        if result["status"] == "passed":
+            break
+
+        if attempt < max_attempts:
+            logger.info(
+                "Retrying '%s' (attempt %d/%d)...",
+                case["name"], attempt + 1, max_attempts,
+            )
+
+    last_result["duration"] = total_duration
+    return last_result
 
