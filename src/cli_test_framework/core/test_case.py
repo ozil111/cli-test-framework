@@ -9,6 +9,7 @@ class TestCaseStep:
     args: List[str]
     expected: Dict[str, Any]
     timeout: Optional[float] = None
+    retry_count: int = 0
 
 @dataclass
 class TestCase:
@@ -22,6 +23,7 @@ class TestCase:
     resources: Optional[Dict[str, Any]] = None
     steps: Optional[List[TestCaseStep]] = None
     tags: List[str] = field(default_factory=list)
+    retry_count: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert test case to dictionary format"""
@@ -33,6 +35,7 @@ class TestCase:
             "timeout": self.timeout,
             "resources": self.resources,
             "tags": self.tags,
+            "retry_count": self.retry_count,
         }
         if self.steps is not None:
             result["steps"] = [
@@ -41,6 +44,7 @@ class TestCase:
                     "args": s.args,
                     "expected": s.expected,
                     "timeout": s.timeout,
+                    "retry_count": s.retry_count,
                 }
                 for s in self.steps
             ]
@@ -60,4 +64,5 @@ class TestCase:
             "description": self.description or None,
             "timeout": self.timeout,
             "resources": self.resources,
+            "retry_count": self.retry_count,
         }

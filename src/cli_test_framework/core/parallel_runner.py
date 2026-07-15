@@ -138,12 +138,14 @@ class ParallelRunner(BaseRunner):
                                 "expected": case.expected,
                                 "timeout": case.timeout,
                                 "resources": case.resources,
+                                "retry_count": case.retry_count,
                                 "steps": [
                                     {
                                         "command": s.command,
                                         "args": s.args,
                                         "expected": s.expected,
                                         "timeout": s.timeout,
+                                        "retry_count": s.retry_count,
                                     }
                                     for s in case.steps
                                 ] if case.steps else None,

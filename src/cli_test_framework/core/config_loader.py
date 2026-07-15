@@ -115,6 +115,7 @@ def parse_test_cases(
                         args=resolved_args,
                         expected=step["expected"],
                         timeout=step.get("timeout"),
+                        retry_count=step.get("retry_count", 0),
                     ))
                 else:
                     steps.append(TestCaseStep(
@@ -122,6 +123,7 @@ def parse_test_cases(
                         args=step.get("args", []),
                         expected=step.get("expected", {}),
                         timeout=step.get("timeout"),
+                        retry_count=step.get("retry_count", 0),
                     ))
             cases.append(TestCase(
                 name=case.get("name", ""),
@@ -151,6 +153,7 @@ def parse_test_cases(
                     timeout=case.get("timeout"),
                     resources=case.get("resources"),
                     tags=case.get("tags", []),
+                    retry_count=case.get("retry_count", 0),
                 ))
             else:
                 cases.append(TestCase(
@@ -162,6 +165,7 @@ def parse_test_cases(
                     timeout=case.get("timeout"),
                     resources=case.get("resources"),
                     tags=case.get("tags", []),
+                    retry_count=case.get("retry_count", 0),
                 ))
 
     return cases
@@ -236,6 +240,7 @@ def execute_sequence(
             "description": None,
             "timeout": _step_attr(step, "timeout"),
             "resources": None,
+            "retry_count": _step_attr(step, "retry_count", 0),
         }
 
         command_preview = (

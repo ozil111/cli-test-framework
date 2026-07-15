@@ -46,6 +46,7 @@ def run_test_in_process(test_index: int, case_data: Dict[str, Any], workspace: s
         "description": case_data.get("description"),
         "timeout": case_data.get("timeout"),
         "resources": case_data.get("resources"),
+        "retry_count": case_data.get("retry_count", 0),
     }
 
     command_preview = f"{case['command']} {' '.join(case['args'])}".strip()

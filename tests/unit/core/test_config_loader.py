@@ -1,8 +1,8 @@
-"""Unit tests for cli_test_framework.core.config_loader — substitute_placeholders."""
+"""Unit tests for cli_test_framework.core.config_loader — substitute_placeholders, parse_test_cases."""
 
 import pytest
 
-from cli_test_framework.core.config_loader import substitute_placeholders
+from cli_test_framework.core.config_loader import substitute_placeholders, parse_test_cases
 
 
 # ---------------------------------------------------------------------------
@@ -134,3 +134,88 @@ class TestPlaceholderInTestCases:
         assert steps[0]["args"] == ["--parse", "model.dat"]
         assert steps[1]["command"] == "/opt/solver"
         assert steps[1]["args"] == ["--solve", "model.dat"]
+
+
+# ---------------------------------------------------------------------------
+# parse_test_cases — retry_count
+# ---------------------------------------------------------------------------
+
+class TestParseRetryCount:
+    """Tests for ``retry_count`` parsing in ``parse_test_cases``."""
+
+    def test_single_command_retry_count(self):
+        config = {
+            "test_cases": [
+                {
+                    "name": "retry-case",
+                    "command": "echo",
+                    "args": ["ok"],
+                    "expected": {"return_code": 0},
+                    "retry_count": 3,
+                }
+            ]
+        }
+        cases = parse_test_cases(config)
+        assert len(cases) == 1
+        assert cases[0].retry_count == 3
+
+    def test_single_command_default_retry_count(self):
+        """Without ``retry_count``, it defaults to 0."""
+        config = {
+            "test_cases": [
+                {
+                    "name": "no-retry",
+                    "command": "echo",
+                    "args": ["ok"],
+                    "expected": {"return_code": 0},
+                }
+            ]
+        }
+        cases = parse_test_cases(config)
+        assert cases[0].retry_count == 0
+
+    def test_step_retry_count(self):
+        config = {
+            "test_cases": [
+                {
+                    "name": "step-case",
+                    "steps": [
+                        {
+                            "command": "echo",
+                            "args": ["s1"],
+                            "expected": {"return_code": 0},
+                        },
+                        {
+                            "command": "echo",
+                            "args": ["s2"],
+                            "expected": {"return_code": 0},
+                            "retry_count": 2,
+                        },
+                    ],
+                }
+            ]
+        }
+        cases = parse_test_cases(config)
+        assert len(cases) == 1
+        steps = cases[0].steps
+        assert len(steps) == 2
+        assert steps[0].retry_count == 0  # default
+        assert steps[1].retry_count == 2
+
+    def test_step_default_retry_count(self):
+        config = {
+            "test_cases": [
+                {
+                    "name": "step-no-retry",
+                    "steps": [
+                        {
+                            "command": "echo",
+                            "args": ["s1"],
+                            "expected": {"return_code": 0},
+                        }
+                    ],
+                }
+            ]
+        }
+        cases = parse_test_cases(config)
+        assert cases[0].steps[0].retry_count == 0
