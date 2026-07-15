@@ -172,6 +172,7 @@ tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_assertions.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_config_loader.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_execution.cpython-312-pytest-9.0.3.pyc
+tests/unit/core/__pycache__/test_execution.cpython-312.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-7.4.4.pyc
 tests/unit/core/__pycache__/test_history_store.cpython-312-pytest-9.0.3.pyc
 tests/unit/core/__pycache__/test_process_worker.cpython-312-pytest-7.4.4.pyc
