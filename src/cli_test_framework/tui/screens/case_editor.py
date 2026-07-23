@@ -157,10 +157,13 @@ class CaseEditorScreen(Screen):
 
         if self._is_sequence:
             steps = self.query_one("#steps-editor", StepsEditor).to_steps()
+            expected = self.query_one("#expected-editor", ExpectedEditor).to_dict()
             return TestCase(
                 name=name,
                 steps=steps,
+                expected=expected,
                 description=description or "",
+                timeout=timeout,
                 resources=self._case.resources if self._case else None,
                 tags=tags,
                 retry_count=retry_count,
@@ -202,7 +205,7 @@ class CaseEditorScreen(Screen):
             args_label.display = False
             cmd_input.display = False
             args_input.display = False
-            expected.display = False
+            expected.display = True
             steps.display = True
             switch_btn.label = "Switch to Single"
         else:

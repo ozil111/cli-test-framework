@@ -128,6 +128,7 @@ def parse_test_cases(
             cases.append(TestCase(
                 name=case.get("name", ""),
                 steps=steps,
+                expected=case.get("expected", {}),
                 description=case.get("description", ""),
                 resources=case.get("resources"),
                 tags=case.get("tags", []),
@@ -194,6 +195,7 @@ def execute_sequence(
     print_prefix: str = "",
     lock: Any = None,
     executor: Any = None,
+    case_expected: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Execute a sequence test case (fail-fast).
 
@@ -218,6 +220,11 @@ def execute_sequence(
         Optional override for ``execute_single_test_case``.
         Defaults to the canonical import; callers that need monkeypatch
         support (e.g. process_worker) should pass their own reference.
+    case_expected:
+        Optional case-level ``expected`` assertions (return_code,
+        output_contains, output_matches, compare_files) that are
+        evaluated after *all* steps pass.  Supports the same fields
+        as step-level ``expected``.
     """
     if executor is None:
         executor = execute_single_test_case
@@ -266,12 +273,46 @@ def execute_sequence(
                 logger.error("  %sError at step %d: %s", prefix, i+1, result["message"])
             break
 
-    status = "passed" if all_passed else last_result["status"]
+    # ── Case-level assertions ──
+    if all_passed and case_expected:
+        try:
+            from .execution import validate_result
+
+            case_result: Dict[str, Any] = {
+                "name": case_name,
+                "status": "passed",
+                "message": "",
+                "command": "",
+                "output": combined_output,
+                "return_code": last_result["return_code"] if last_result else None,
+                "duration": total_duration,
+            }
+            validate_result(case_expected, case_result, workspace)
+        except AssertionError as exc:
+            all_passed = False
+            failed_step = len(steps) + 1  # synthetic step number
+            last_result = {
+                "name": case_name,
+                "status": "failed",
+                "message": f"Case-level assertion failed: {exc}",
+                "command": "",
+                "output": "",
+                "return_code": None,
+                "duration": 0.0,
+            }
+            logger.error("  %sCase-level assertion failed: %s", prefix, exc)
+
+    status = "passed" if all_passed else (last_result["status"] if last_result else "failed")
     message = ""
     if not all_passed:
+        # Only count the synthetic case-level step when the failure
+        # actually happens at that stage (not when a real step fails).
+        total_steps = len(steps) + (
+            1 if case_expected and failed_step == len(steps) + 1 else 0
+        )
         message = (
-            f"Failed at step {failed_step}/{len(steps)}: "
-            f"{last_result['message']}"
+            f"Failed at step {failed_step}/{total_steps}: "
+            f"{last_result['message']}" if last_result else "Unknown error"
         )
 
     command_summary = " -> ".join(

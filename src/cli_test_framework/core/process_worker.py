@@ -19,6 +19,7 @@ def _run_sequence_in_process(test_index: int, case_data: Dict[str, Any], workspa
         workspace=workspace,
         print_prefix=f"[Process Worker {test_index}]",
         executor=execute_single_test_case,
+        case_expected=case_data.get("expected"),
     )
 
 def run_test_in_process(test_index: int, case_data: Dict[str, Any], workspace: str = None) -> Dict[str, Any]:

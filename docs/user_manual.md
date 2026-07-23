@@ -126,6 +126,10 @@ test_cases:
 | `actual` | 是 | 测试命令产出的文件路径（相对路径按 workspace 解析） |
 | `baseline` | 是 | 基线/参考文件路径（相对路径按 workspace 解析） |
 | `type` | 否 | 比较器类型：`text`、`json`、`csv`、`xml`、`h5`、`binary`；省略时按扩展名自动识别 |
+| `start_line` | 否 | 起始行号（1-based），仅比较该行及之后的内容 |
+| `end_line` | 否 | 结束行号（1-based），比较到该行为止 |
+| `start_column` | 否 | 起始列号（1-based），仅比较该列及之后的内容 |
+| `end_column` | 否 | 结束列号（1-based），比较到该列为止 |
 | 其他 | 否 | 透传给对应比较器的参数，如 `rtol`、`atol`、`encoding`、`tables`、`data_filter` 等 |
 
 ```json
@@ -830,6 +834,42 @@ test_cases:
 ```
 
 每个 step 支持 `command`、`args`、`expected`、`timeout`、`retry_count` 字段。失败时结果会标注失败步骤编号，如 "Failed at step 2/3"。
+
+### Case 级别 expected（顺序步骤）
+
+当所有步骤都执行通过后，可以在 case 级别定义额外的 `expected` 断言，对所有步骤产生的文件做统一的验证（如文件比较）。Case 级别的 `expected` 字段格式与单命令模式完全一致，支持 `return_code`、`output_contains`、`output_matches`、`compare_files`。
+
+```json
+{
+    "name": "多步骤+文件对比",
+    "steps": [
+        {
+            "command": "python",
+            "args": ["./generate.py", "output.csv"],
+            "expected": { "return_code": 0 }
+        },
+        {
+            "command": "python",
+            "args": ["./process.py", "output.csv"],
+            "expected": { "return_code": 0, "output_contains": ["Done"] }
+        }
+    ],
+    "expected": {
+        "compare_files": [
+            {
+                "actual": "output.csv",
+                "baseline": "baseline/output.csv",
+                "type": "csv",
+                "rtol": 0.02,
+                "start_line": 93,
+                "end_line": 99
+            }
+        ]
+    }
+}
+```
+
+> **注意**：case 级别的 `expected` 只在所有 step 通过后才执行。如果某个 step 失败，case 级断言不会运行。case 级断言失败时，错误消息包含 "Case-level assertion failed" 前缀以便区分。
 
 ## 资源感知调度
 

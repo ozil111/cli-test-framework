@@ -152,6 +152,7 @@ class BaseRunner(ABC):
             case_name=case.name,
             steps=case.steps,
             workspace=str(self.workspace) if self.workspace else None,
+            case_expected=case.expected if case.expected else None,
         )
 
     @abstractmethod
