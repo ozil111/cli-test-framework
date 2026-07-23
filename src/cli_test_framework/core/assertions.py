@@ -83,13 +83,31 @@ class Assertions:
         if not file_type:
             file_type = _detect_file_type(actual_path)
 
+        # Extract compare_files() method-level parameters (not constructor kwargs).
+        # These control line/column ranges in the comparator's compare_files() call.
+        _method_keys = {"start_line", "end_line", "start_column", "end_column"}
+        method_params: Dict[str, Any] = {}
+        for k in list(comparator_kwargs):
+            if k in _method_keys:
+                method_params[k] = comparator_kwargs.pop(k)
+
+        # Convert 1-based user input to 0-based (matches CLI behaviour)
+        if "start_line" in method_params:
+            method_params["start_line"] = max(0, int(method_params["start_line"]) - 1)
+        if "end_line" in method_params and method_params["end_line"] is not None:
+            method_params["end_line"] = max(0, int(method_params["end_line"]) - 1)
+        if "start_column" in method_params:
+            method_params["start_column"] = max(0, int(method_params["start_column"]) - 1)
+        if "end_column" in method_params and method_params["end_column"] is not None:
+            method_params["end_column"] = max(0, int(method_params["end_column"]) - 1)
+
         try:
             comparator = ComparatorFactory.create_comparator(
                 file_type,
                 verbose=True,  # always include diff details in the assertion message
                 **comparator_kwargs,
             )
-            result = comparator.compare_files(actual_path, baseline_path)
+            result = comparator.compare_files(actual_path, baseline_path, **method_params)
 
             if result.error:
                 raise AssertionError(

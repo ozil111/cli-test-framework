@@ -318,3 +318,93 @@ def _write_two(tmpdir, name_a, name_b, content_a, content_b=None):
     with open(pb, "w") as f:
         f.write(content_b)
     return pa, pb
+
+
+# ---------------------------------------------------------------------------
+# Assertions.compare_files – start_line / end_line / start_column / end_column
+# ---------------------------------------------------------------------------
+
+
+def test_compare_files_passes_start_line_to_comparator():
+    """start_line is extracted from kwargs, 1-based→0-based, passed to
+    comparator.compare_files() as method-level param."""
+    with tempfile.TemporaryDirectory() as d:
+        a, b = _write_two(d, "a.txt", "b.txt", "line1\nline2\nline3\n")
+        # start_line=2 (1-based) → line index 1 (0-based) → skip "line1"
+        assert (
+            Assertions.compare_files(a, b, file_type="text", start_line=2)
+            is True
+        )
+
+
+def test_compare_files_passes_start_line_and_end_line():
+    with tempfile.TemporaryDirectory() as d:
+        a = os.path.join(d, "a.txt")
+        b = os.path.join(d, "b.txt")
+        content_a = "line1\nline2\nline3\nline4\n"
+        content_b = "line1\ndifferent\nline3\nline4\n"
+        with open(a, "w") as f:
+            f.write(content_a)
+        with open(b, "w") as f:
+            f.write(content_b)
+        # line 2 differs but start_line=3, end_line=4 → only compare 3-4
+        assert (
+            Assertions.compare_files(
+                a, b, file_type="text", start_line=3, end_line=4
+            )
+            is True
+        )
+
+
+def test_compare_files_start_line_detects_diff_in_range():
+    with tempfile.TemporaryDirectory() as d:
+        a = os.path.join(d, "a.txt")
+        b = os.path.join(d, "b.txt")
+        with open(a, "w") as f:
+            f.write("A1\nB1\nC1\n")
+        with open(b, "w") as f:
+            f.write("A2\nB2\nC2\n")
+        # Only compare line 1 → should differ
+        with pytest.raises(AssertionError, match="File comparison failed"):
+            Assertions.compare_files(
+                a, b, file_type="text", start_line=1, end_line=1
+            )
+
+
+def test_compare_files_start_column_and_end_column():
+    with tempfile.TemporaryDirectory() as d:
+        a, b = _write_two(d, "a.txt", "b.txt", "abcdef\n")
+        # start_column=3, end_column=4 → only compare "cd" (indices 2-3)
+        assert (
+            Assertions.compare_files(
+                a, b, file_type="text", start_column=3, end_column=4
+            )
+            is True
+        )
+
+
+def test_compare_files_start_line_default_1_becomes_0():
+    """start_line=1 (default 1-based) → 0-based index 0 → entire file."""
+    with tempfile.TemporaryDirectory() as d:
+        a, b = _write_two(d, "a.txt", "b.txt", "same\n")
+        assert (
+            Assertions.compare_files(
+                a, b, file_type="text", start_line=1
+            )
+            is True
+        )
+
+
+def test_compare_files_range_params_not_leak_to_constructor():
+    """start_line, end_line, start_column, end_column must NOT be passed
+    to ComparatorFactory.create_comparator() (the constructor)."""
+    with tempfile.TemporaryDirectory() as d:
+        a, b = _write_two(d, "a.txt", "b.txt", "content\n")
+        # If start_line leaks to constructor, TextComparator would fail.
+        assert (
+            Assertions.compare_files(
+                a, b, file_type="text",
+                start_line=1, end_line=1, start_column=1, end_column=1,
+            )
+            is True
+        )

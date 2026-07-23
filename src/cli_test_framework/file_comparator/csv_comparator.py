@@ -11,6 +11,7 @@
 import csv
 import io
 import math
+import re
 from .text_comparator import TextComparator
 from .result import Difference
 
@@ -25,7 +26,7 @@ class CsvComparator(TextComparator):
              - Configurable delimiter and quote character
     """
     
-    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False, rtol=1e-5, atol=1e-8, **kwargs):
+    def __init__(self, encoding="utf-8", delimiter=",", quotechar='"', chunk_size=8192, verbose=False, rtol=1e-5, atol=1e-8, data_filter=None, **kwargs):
         """
         @brief Initialize CSV comparator with configuration
         @param encoding str: File encoding (default: utf-8)
@@ -35,6 +36,7 @@ class CsvComparator(TextComparator):
         @param verbose bool: Enable verbose output
         @param rtol float: Relative tolerance for numerical comparison (default: 1e-5)
         @param atol float: Absolute tolerance for numerical comparison (default: 1e-8)
+        @param data_filter str: Data filter expression applied before numeric comparison
         @param **kwargs: Additional parameters (ignored)
         """
         super().__init__(encoding=encoding, chunk_size=chunk_size, verbose=verbose, **kwargs)
@@ -42,6 +44,8 @@ class CsvComparator(TextComparator):
         self.quotechar = quotechar
         self.rtol = rtol
         self.atol = atol
+        self.data_filter = data_filter
+        self.filter_func = self._parse_filter()
     
     def read_content(self, file_path, start_line=0, end_line=None, start_column=0, end_column=None):
         """
@@ -126,6 +130,11 @@ class CsvComparator(TextComparator):
                     try:
                         num1 = float(cell1)
                         num2 = float(cell2)
+                        # Apply data filter: skip cells that don't meet
+                        # criteria in BOTH files
+                        if self.filter_func:
+                            if not (self.filter_func(num1) and self.filter_func(num2)):
+                                continue
                         if math.isclose(num1, num2, rel_tol=self.rtol, abs_tol=self.atol):
                             continue  # Within tolerance, treat as equal
                     except (ValueError, TypeError):
@@ -154,3 +163,42 @@ class CsvComparator(TextComparator):
         if not differences:
             return True, []
         return False, differences
+
+    def _parse_filter(self):
+        """Parse data filter string and return a scalar filter function"""
+        if not self.data_filter:
+            return None
+        self.logger.debug(f"Parsing data filter: {self.data_filter}")
+        try:
+            match = re.match(
+                r"^(abs)?([><]=?|==)([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$",
+                self.data_filter.replace(" ", ""),
+            )
+            if not match:
+                self.logger.warning(
+                    f"Invalid data filter format: {self.data_filter}. Ignoring filter."
+                )
+                return None
+            use_abs, op, value_str = match.groups()
+            value = float(value_str)
+            op_map = {
+                ">": lambda x: x > value,
+                ">=": lambda x: x >= value,
+                "<": lambda x: x < value,
+                "<=": lambda x: x <= value,
+                "==": lambda x: x == value,
+            }
+
+            def filter_func(x):
+                target = abs(x) if use_abs else x
+                return op_map[op](target)
+
+            self.logger.debug(
+                f"Created filter function for pattern: {use_abs or ''}{op}{value}"
+            )
+            return filter_func
+        except Exception as e:
+            self.logger.error(
+                f"Failed to parse data filter '{self.data_filter}': {e}. Ignoring filter."
+            )
+            return None

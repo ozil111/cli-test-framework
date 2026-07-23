@@ -131,6 +131,11 @@ Examples:
     csv_group.add_argument('--csv-delimiter', default=',', help='CSV field delimiter (default: comma)')
     csv_group.add_argument('--csv-quotechar', default='"',
                           help='Character used for quoting fields in CSV (default: double quote)')
+    csv_group.add_argument('--csv-data-filter', type=str,
+                          help='Data filter to apply before comparison. '
+                               "Example: '>1e-6', '<=0.01', 'abs>1e-9'. "
+                               'Filters out numeric cells that do not meet the criteria '
+                               'from BOTH files before comparison.')
 
     # JSON comparison options
     json_group = compare_parser.add_argument_group('JSON comparison options')
