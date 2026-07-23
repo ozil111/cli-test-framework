@@ -1081,6 +1081,11 @@ compare-files data1.csv data2.csv --csv-delimiter ';' --csv-rtol 1e-4 --csv-atol
 
 # TSV 文件（自动识别为 csv 类型）
 compare-files data1.tsv data2.tsv
+
+# 数据过滤（只比较满足条件的数值单元格）
+compare-files data1.csv data2.csv --csv-data-filter '>1e-6'
+compare-files data1.csv data2.csv --csv-data-filter 'abs>1e-9'
+compare-files data1.csv data2.csv --csv-data-filter '<=0.01'
 ```
 
 | 选项 | 说明 |
@@ -1089,8 +1094,9 @@ compare-files data1.tsv data2.tsv
 | `--csv-atol` | 数值绝对容差，默认 1e-8 |
 | `--csv-delimiter` | 字段分隔符，默认 `,` |
 | `--csv-quotechar` | 引用字符，默认 `"` |
+| `--csv-data-filter` | 数据过滤表达式：`>`, `>=`, `<`, `<=`, `==`，支持 `abs` 前缀。只比较两个文件中**都满足**条件的数值单元格 |
 
-CSV 比较按行列结构逐单元格比对；数值单元格在容差范围内视为相等。差异报告包含行数、列数不匹配与单元格不一致，最多列出 10 条。
+CSV 比较按行列结构逐单元格比对；数值单元格在容差范围内视为相等。`--csv-data-filter` 过滤后，不满足条件的数值单元格对不会报差异。差异报告包含行数、列数不匹配与单元格不一致，最多列出 10 条。
 
 ### XML 文件比较
 
