@@ -6,7 +6,7 @@ import re
 from .numeric_compare import compare_numeric, parse_data_filter
 
 class H5Comparator(FileComparator):
-    def __init__(self, tables=None, table_regex=None, structure_only=False, show_content_diff=False, debug=False, rtol=1e-5, atol=1e-8, expand_path=True, data_filter=None, error_analysis=False, **kwargs):
+    def __init__(self, tables=None, table_regex=None, structure_only=False, show_content_diff=False, debug=False, rtol=1e-5, atol=1e-8, expand_path=True, data_filter=None, error_analysis=False, encoding="utf-8", verbose=False):
         """
         Initialize H5 comparator
         :param tables: List of table names to compare. If None, compare all tables
@@ -19,8 +19,11 @@ class H5Comparator(FileComparator):
         :param expand_path: If True, expand group paths to compare all sub-items. Defaults to True.
         :param data_filter: String filter expression for data comparison (e.g., '>1e-6', 'abs>1e-9')
         :param error_analysis: Enable streaming error statistics over ALL numeric cells
+        :param encoding: Text encoding for attribute values
+        :param verbose: Debug logging of this comparator's own logger
+        @note Parameters are strict: unknown/misspelled config keys fail loudly.
         """
-        super().__init__(**kwargs)
+        super().__init__(encoding=encoding, verbose=verbose)
         self.tables = tables
         self.table_regex = table_regex
         self.structure_only = structure_only
@@ -33,8 +36,9 @@ class H5Comparator(FileComparator):
         self.error_analysis = error_analysis
         self._error_stats = None
         
-        # Set debug level if verbose is enabled
-        if kwargs.get('verbose', False) or debug:
+        # Set debug level if debug mode is enabled (verbose is handled by
+        # the file-lane base constructor / factory).
+        if debug:
             self.logger.setLevel(logging.DEBUG)
             
         self.logger.debug(f"Initialized H5Comparator with structure_only={structure_only}, show_content_diff={show_content_diff}, rtol={rtol}, atol={atol}, expand_path={expand_path}, data_filter={data_filter}")

@@ -89,9 +89,22 @@ def _dispatch_file_compare(
     baseline_path = spec.get("baseline", "")
     file_type = spec.get("type", None)
 
+    # "options" is the framework-owned plugin configuration namespace; its
+    # entries are merged into constructor kwargs.  Explicit top-level keys
+    # take precedence (legacy compatibility).
+    options = spec.get("options")
+    if options is not None and not isinstance(options, dict):
+        raise ValidationError(
+            f"'options' must be an object of comparator parameters, "
+            f"got: {type(options).__name__}",
+            failure_kind="file_compare",
+        )
     # All remaining keys are forwarded as comparator kwargs
-    known_keys = {"actual", "baseline", "type"}
-    comparator_kwargs = {k: v for k, v in spec.items() if k not in known_keys}
+    known_keys = {"actual", "baseline", "type", "options"}
+    comparator_kwargs = {
+        **(options or {}),
+        **{k: v for k, v in spec.items() if k not in known_keys},
+    }
 
     try:
         cf_result = assertions.compare_files(

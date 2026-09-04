@@ -8,17 +8,13 @@
 @date 2025
 """
 
-import logging
 import re
 import subprocess
 import sys
-from pathlib import Path
 from typing import List, Optional
 
 from .base_comparator import ComparatorBase, CompareContext
 from .result import ComparisonResult, Difference
-
-logger = logging.getLogger("symtest.file_comparator.script")
 
 
 class ScriptComparator(ComparatorBase):
@@ -48,13 +44,11 @@ class ScriptComparator(ComparatorBase):
         pass_pattern: Optional[str] = None,
         fail_pattern: Optional[str] = None,
         timeout: int = 3600,
-        encoding: str = "utf-8",
-        **kwargs,
     ):
-        super().__init__(encoding=encoding, **kwargs)
-        self.script = script
-        self.cwd = cwd
-        self.args = args or []
+        super().__init__()
+        self.script = script      # workspace-resolved by the framework (path_params)
+        self.cwd = cwd            # workspace-resolved by the framework (path_params)
+        self.args = list(args) if args else []
         self.interpreter = interpreter or sys.executable
         self.pass_exit_code = pass_exit_code
         self.pass_pattern = re.compile(pass_pattern) if pass_pattern else None
@@ -67,8 +61,8 @@ class ScriptComparator(ComparatorBase):
     def compare(self, ctx: CompareContext) -> ComparisonResult:  # type: ignore[override]
         """Execute the external script and evaluate its output."""
         result = ComparisonResult(
-            file1=str(ctx.baseline) if ctx.baseline else "",
-            file2=str(ctx.actual) if ctx.actual else "",
+            file1=ctx.baseline,
+            file2=ctx.actual,
         )
 
         try:

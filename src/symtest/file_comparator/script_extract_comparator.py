@@ -59,21 +59,21 @@ class ScriptExtractComparator(ExtractorComparator):
 
     def __init__(self, script: str = "", args=None, cwd: str = None,
                  interpreter: str = None, timeout: int = 3600,
-                 channels=None, default_channel=None,
-                 verbose: bool = False, **kwargs):
+                 channels=None, default_channel=None):
         """
         @param script str: Path to the extraction script (required).
         @param args list: Extra CLI arguments passed to the script.
         @param cwd str: Working directory for the subprocess (workspace-
-               resolved by the framework via ``path_params``).
+               resolved by the framework BEFORE construction via
+               ``path_params``).
         @param interpreter str: Python interpreter (default ``sys.executable``).
         @param timeout int: Subprocess timeout in seconds (default 3600).
+        @note Parameters are strict: unknown/misspelled config keys fail loudly.
         """
-        super().__init__(channels=channels, default_channel=default_channel,
-                         verbose=verbose, **kwargs)
-        self.script = script
+        super().__init__(channels=channels, default_channel=default_channel)
+        self.script = script      # workspace-resolved by the framework
         self.args = list(args) if args else []
-        self.cwd = cwd
+        self.cwd = cwd            # workspace-resolved by the framework
         self.interpreter = interpreter or sys.executable
         self.timeout = timeout
 

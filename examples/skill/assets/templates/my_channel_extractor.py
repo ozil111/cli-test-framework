@@ -37,16 +37,19 @@ from symtest.file_comparator.extractor_comparator import ChannelData, ExtractorC
 class MyChannelExtractorComparator(ExtractorComparator):
     """
     @brief Extracts named channels of (expected, actual) numeric arrays.
-    @details Implement `extract(ctx)` only.  Constructor receives every
-             compareSpec kwarg (channels / default_channel are consumed by
-             the base class); forward **kwargs to super().
+    @details Implement `extract(ctx)` only.  Constructor parameters are
+             strict: `channels` / `default_channel` / `rtol` / `atol` are
+             consumed by the base class; plugin params (ref_csv, actual_csv)
+             are declared here.  Unknown compareSpec keys fail loudly.
     """
 
     # Constructor params holding filesystem paths (framework-resolved).
     path_params = ("ref_csv", "actual_csv")
 
-    def __init__(self, ref_csv="", actual_csv="", **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, ref_csv="", actual_csv="", **params):
+        # NOTE: `**params` here is an explicit opt-in for free-form user
+        # configuration; drop it if your extractor declares all its options.
+        super().__init__(**params)
         self.ref_csv = ref_csv      # already workspace-resolved
         self.actual_csv = actual_csv
 

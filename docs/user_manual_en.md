@@ -1990,7 +1990,9 @@ Selection guide:
 
 **Path resolution convention**: `actual`/`baseline` and any constructor params
 declared in the plugin's `path_params` class attribute are resolved against
-the workspace by the framework before `compare(ctx)` is invoked. Plugins must
+the workspace by the framework **before the comparator is constructed** —
+constructor-captured state (`self.script`, `self.cwd`, ...) already holds
+absolute paths. Plugins must
 **never** resolve paths against CWD — it is unreliable under parallel/process
 execution.
 
@@ -2019,15 +2021,21 @@ Plugins are also automatically inherited by process-mode child processes via the
 - The registered type name = class name without `Comparator`, lowercased (e.g., `myanalysis`); a `comparator_type = "my_analysis"` class attribute overrides it
 - Abstract base classes (with unimplemented abstract methods) are skipped automatically
 
-Use the registered type name directly in your config; every key other than
-`actual`/`baseline`/`type` is forwarded to the plugin constructor:
+Use the registered type name directly in your config. Comparator constructor
+parameters are **strict**: keys other than `actual`/`baseline`/`type` are
+forwarded to the plugin constructor, but a parameter the plugin does not
+declare (e.g. a typo like `pass_threhsold`) **fails loudly** at construction
+(the error names the comparator type and its supported parameters) — it never
+silently falls back to defaults. Plugin-owned configuration should go into
+the `options` namespace (entries merged into constructor kwargs; explicit
+top-level keys take precedence), keeping the core schema generic:
 
 ```json
 {
   "type": "myanalysis",
   "actual": "optional_for_plugins",
   "baseline": "optional_for_plugins",
-  "param1": "value1"
+  "options": {"param1": "value1", "param2": 42}
 }
 ```
 
@@ -2084,7 +2092,8 @@ Config (per-channel tolerances routed by name; unlisted channels use `default_ch
 - `identical = all channels pass`; one compareSpec is still one assertion
 - Difference positions carry the channel prefix (`channel S33`); `error_stats` nests by channel name
 - The report shows per-channel pass/fail, tolerances and stats; channel differences are trimmed per channel in JSON output
-- Custom error metrics ride along via `ChannelData.extra_stats` (free-form dict merged into channel stats); the verdict itself cannot be altered by the plugin — custom verdicts belong to the autonomous lane
+- Custom error metrics ride along via `ChannelData.extra_stats`, kept in a SEPARATE namespace (`ChannelResult.extra_stats`) that can never overwrite framework canonical metrics (`max_abs_error`, `total`, ...); the report renders both namespaces per channel
+- The verdict itself cannot be altered by the plugin — custom verdicts belong to the autonomous lane
 
 #### Data Lane: Built-in `script_extract` Type (Zero-Modification Script Access)
 
@@ -2132,15 +2141,16 @@ from symtest.file_comparator import ComparatorBase, CompareContext, ComparisonRe
 class MyAnalysisComparator(ComparatorBase):
     path_params = ("script", "case_dir")
 
-    def __init__(self, script="", case_dir=None, pass_threshold=1e-6, **kwargs):
-        super().__init__(**kwargs)
-        self.script = script
+    def __init__(self, script="", case_dir=None, pass_threshold=1e-6):
+        super().__init__()   # strict: undeclared/misspelled config keys fail loudly
+        self.script = script      # workspace-resolved by the framework before construction
         self.case_dir = case_dir
         self.pass_threshold = pass_threshold
 
     def compare(self, ctx: CompareContext) -> ComparisonResult:
         result = ComparisonResult(
-            file1=str(ctx.baseline or ""), file2=str(ctx.actual or "")
+            file1=ctx.baseline,   # stays None when there is no file input — no fake ""
+            file2=ctx.actual,
         )
         # ... run analysis, parse metrics ...
         result.identical = True  # or False + differences
@@ -2148,9 +2158,10 @@ class MyAnalysisComparator(ComparatorBase):
         return result
 ```
 
-`ctx` fields: `workspace` / `actual` / `baseline` (optional) / `params`
-(full compareSpec passthrough, including free-form keys like `inputs`) /
-`error_analysis`.
+`ctx` fields (invocation-level context only): `workspace` / `actual` /
+`baseline` (`None` when absent) / `params` (file-lane window ranges) /
+`error_analysis`.  The single authoritative copy of comparator configuration
+lives in constructor-captured state — `ctx` never duplicates it.
 
 #### Built-in `script` Type Comparator (Autonomous Lane Out of the Box)
 

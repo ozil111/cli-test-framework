@@ -14,6 +14,7 @@ plugins are no longer forced to provide empty stubs for them.
 """
 
 from abc import abstractmethod
+import logging
 from pathlib import Path
 
 from .base_comparator import ComparatorBase, CompareContext
@@ -28,6 +29,23 @@ class FileComparator(ComparatorBase):
              position offsetting for text-style comparators.  Subclasses
              implement :meth:`read_content` and :meth:`compare_content`.
     """
+
+    def __init__(self, encoding: str = "utf-8", chunk_size: int = 8192,
+                 verbose: bool = False):
+        """
+        @brief Initialize file-lane state.
+        @param encoding str: Text decoding for file reads (default "utf-8").
+        @param chunk_size int: Chunk size for large-file reads (default 8192).
+        @param verbose bool: Raises THIS comparator's own logger to DEBUG.
+               File-lane justified (byte/hex/text diff tracing); it touches
+               only the comparator's named logger, never global logging
+               policy.  The factory also accepts ``verbose`` for any lane.
+        """
+        super().__init__()
+        self.encoding = encoding
+        self.chunk_size = chunk_size
+        if verbose:
+            self.logger.setLevel(logging.DEBUG)
 
     @abstractmethod
     def read_content(self, file_path, start_line=0, end_line=None, start_column=0, end_column=None):

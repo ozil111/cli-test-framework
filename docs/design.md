@@ -178,9 +178,11 @@ PathResolver 解析（系统命令直通、shell builtin 平台包装、复合�
 ### 6.1 三泳道比较器架构
 
 所有比较器共享根契约 `ComparatorBase.compare(ctx) -> ComparisonResult`：
-框架构建 `CompareContext`（workspace / actual / baseline / params / error_analysis）
-并统一做路径解析——`actual`/`baseline` 以及插件 `path_params` 声明的构造参数
-均按 workspace 解析，插件不得自行对 CWD resolve。三条泳道职责互斥：
+框架构建 `CompareContext`（workspace / actual / baseline / params / error_analysis）；
+`actual`/`baseline` 以及插件 `path_params` 声明的构造参数在**比较器构造之前**
+按 workspace 统一解析，插件不得自行对 CWD resolve。配置单一事实源：
+比较器配置只存在于构造器捕获的实例状态，`ctx` 仅承载调用级上下文。
+三条泳道职责互斥：
 
 | 泳道 | 基类 | 契约 | verdict 归属 | 内置实例 |
 |---|---|---|---|---|
@@ -190,7 +192,7 @@ PathResolver 解析（系统命令直通、shell builtin 平台包装、复合�
 
 - 文本系共享 difflib 行级基底，json / csv / xml 为其结构化特化；h5 面向科学数据集；binary 流式分块 + LCS 相似度
 - 统一返回 `ComparisonResult`（identical / differences / error / error_stats / command_output / channels），支持 text / json / html 渲染
-- 数据泳道插件可通过 `ChannelData.extra_stats` 附带自定义误差指标（自由 dict 并入通道 stats）；但 verdict 仍由框架容差持有——需要自定 verdict 的走自主泳道
+- 数据泳道插件可通过 `ChannelData.extra_stats` 附带自定义误差指标，存放在独立命名空间（`ChannelResult.extra_stats`），不可覆盖框架规范指标；但 verdict 仍由框架容差持有——需要自定 verdict 的走自主泳道
 
 ### 6.2 通道协议（数据泳道）
 
@@ -209,7 +211,7 @@ PathResolver 解析（系统命令直通、shell builtin 平台包装、复合�
 - `file_type` 取值：`text` / `json` / `csv` / `xml` / `h5` / `binary` / `script` / `script_extract`；工厂按类型分发，支持动态注册与全局 reset（测试用）
 - 插件发现四处来源：内置 `*_comparator.py` 自动发现、`workspace/comparators/` 自动扫描、`--plugin-dir` CLI 参数、`CLITEST_PLUGIN_DIRS` 环境变量（供进程模式 worker 使用）
 - 命名约定：`*_comparator.py` + `*Comparator` 类名；可用类属性 `comparator_type` 显式指定类型名（如 `script_extract`）；抽象基类自动跳过注册
-- compareSpec 透传机制：`actual`/`baseline`/`type` 之外的键全部转发给比较器构造函数（kwargs），`inputs`/`channels`/`default_channel` 亦走此通道
+- 配置传递与严格校验：`actual`/`baseline`/`type`/`options` 之外的键转发给比较器构造函数（kwargs）；构造器参数是**严格**的——未声明的键（拼写错误）在构造时大声失败并给出支持参数清单。`options` 是框架持有的插件配置命名空间（并入构造参数，显式顶层键优先），核心 schema 不为单个插件增加专属字段；`channels`/`default_channel` 属数据泳道框架结构
 
 ### 6.4 script 比较协议（自主泳道对外契约）
 

@@ -191,19 +191,79 @@ def test_channel_results_rendered_per_channel():
     assert "channel S33" in report
 
 
-def test_channel_shaped_error_stats_render_nested():
-    """通道形态的 error_stats（{name: {...}}）应按通道缩进渲染"""
+def test_nested_autonomous_error_stats_not_treated_as_channels():
+    """自主比较器的嵌套 error_stats（{group: {...}}）不得被猜测为通道结果：
+    不渲染通道块，仅做通用扁平渲染。"""
+    detail = {
+        "name": "autonomous_nested",
+        "status": "failed",
+        "compare_failures": [
+            {
+                "actual": "out.dat",
+                "baseline": "ref.dat",
+                "type": "my_analysis",
+                "diff_summary": {},
+                # Channel-SHAPED nested dict from an autonomous comparator —
+                # must NOT be interpreted as channel output.
+                "error_stats": {
+                    "geometry": {"max_deviation": 0.5, "elements": 1024},
+                    "solver": {"iterations": 42, "converged": False},
+                },
+                "channels": [],  # explicitly no channel results
+                "differences": [],
+            }
+        ],
+    }
     generator = ReportGenerator(
         {
             "total": 1, "passed": 0, "failed": 1,
-            "details": [_make_failed_detail_with_channels()],
+            "details": [detail],
         },
         "unused.txt",
     )
     report = generator.generate_report()
-    assert "channel 'S11':" in report
-    assert "channel 'S33':" in report
-    assert "mismatched: 2" in report
+    # Flat generic rendering — no channel inference from dict shape
+    assert "channel '" not in report
+    assert "channels:" not in report
+    assert "error_stats:" in report
+    assert "geometry:" in report
+    assert "solver:" in report
+    assert "iterations" in report
+
+
+def test_flat_error_stats_rendered_when_no_channels():
+    """无通道结果时，扁平 error_stats 走通用渲染（fallback 规则）。"""
+    detail = {
+        "name": "flat_stats",
+        "status": "failed",
+        "compare_failures": [
+            {
+                "actual": "out.dat",
+                "baseline": "ref.dat",
+                "type": "csv",
+                "diff_summary": {},
+                "error_stats": {
+                    "total_numeric_cells": 4,
+                    "mismatched_cells": 1,
+                    "max_abs_error": 0.25,
+                },
+                "channels": [],
+                "differences": [],
+            }
+        ],
+    }
+    generator = ReportGenerator(
+        {
+            "total": 1, "passed": 0, "failed": 1,
+            "details": [detail],
+        },
+        "unused.txt",
+    )
+    report = generator.generate_report()
+    assert "error_stats:" in report
+    assert "total_numeric_cells: 4" in report
+    assert "max_abs_error: 0.25" in report
+    assert "channel '" not in report
 
 
 def test_channel_results_rendered_for_passed_with_error_analysis_all():

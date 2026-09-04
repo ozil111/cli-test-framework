@@ -97,9 +97,13 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                 "file-type comparators (text/csv/json/xml/h5/binary). "
                 "They are optional for script, script_extract, or custom (plugin) "
                 "comparator types. "
-                "Keys other than those listed below are forwarded to the comparator "
-                "as kwargs (e.g. rtol, atol, encoding, tables, data_filter, "
-                "pass_threshold, pass_pattern)."
+                "Other keys are forwarded to the comparator constructor as kwargs "
+                "(e.g. rtol, atol, encoding, tables, data_filter, pass_threshold, "
+                "pass_pattern) and are STRICT: a parameter the comparator does not "
+                "declare fails construction loudly. Use 'options' for plugin-owned "
+                "configuration. Framework resolves actual/baseline and plugin "
+                "path_params-declared paths against the workspace before the "
+                "comparator is constructed."
             ),
             "properties": {
                 "actual": {
@@ -119,12 +123,16 @@ CONFIG_SCHEMA: Dict[str, Any] = {
                         "Omit to auto-detect from the actual file extension."
                     ),
                 },
-                "inputs": {
+                "options": {
                     "type": "object",
+                    "additionalProperties": True,
                     "description": (
-                        "Free-form named inputs for data-lane plugins (script_extract "
-                        "or custom extractors). Path-valued entries declared in the "
-                        "plugin's path_params are resolved relative to the workspace."
+                        "Plugin-owned configuration namespace. Entries are merged "
+                        "into the comparator constructor kwargs (explicit top-level "
+                        "keys take precedence). Preferred over adding plugin-specific "
+                        "top-level keys; unknown parameters fail loudly at "
+                        "construction, so typos are reported instead of silently "
+                        "falling back to defaults."
                     ),
                 },
                 "channels": {

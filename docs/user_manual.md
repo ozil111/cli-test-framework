@@ -1990,7 +1990,8 @@ class MySetup(BaseSetup):
 - 只是想让现成脚本快速接入 → 优先考虑内置 `script`（自定判定）或 `script_extract`（框架容差判定），零 Python 插件代码
 
 **路径解析约定**：`actual`/`baseline` 以及插件用 `path_params` 类属性声明的路径参数，
-由框架统一按 workspace 解析为绝对路径后再调用 `compare(ctx)`。插件内部
+由框架在**比较器构造之前**统一按 workspace 解析为绝对路径——构造器捕获的状态
+（`self.script`、`self.cwd` 等）持有的已是解析后的绝对路径。插件内部
 **禁止**对 CWD 做 `Path.resolve()`——并行/process 模式下 CWD 不可靠。
 
 #### 插件发现方式（三种泳道通用）
@@ -2018,15 +2019,18 @@ symtest run test_config.json --plugin-dir ./extra_plugins
 - 注册的 type 名 = 类名去掉 `Comparator` 再小写（如 `myanalysis`）；也可用类属性 `comparator_type = "my_analysis"` 显式指定
 - 抽象基类（未实现全部抽象方法）自动跳过注册
 
-在配置中直接使用注册的类型名；`actual`/`baseline`/`type` 以外的所有键都会
-透传给插件构造函数：
+在配置中直接使用注册的类型名。比较器构造参数是**严格**的：`actual`/`baseline`/
+`type` 以外的键会透传给插件构造函数，但插件未声明的参数（如拼写错误
+`pass_threhsold`）会在构造时**大声失败**（错误信息包含比较器类型名与支持的
+参数清单），绝不静默回退到默认值。插件自有配置建议放入 `options` 命名空间
+（其条目并入构造参数，显式顶层键优先），避免向核心 schema 增加插件专属字段：
 
 ```json
 {
   "type": "myanalysis",
   "actual": "optional_for_plugins",
   "baseline": "optional_for_plugins",
-  "param1": "value1"
+  "options": {"param1": "value1", "param2": 42}
 }
 ```
 
@@ -2081,8 +2085,10 @@ class UelStressComparator(ExtractorComparator):
 - `identical = 所有通道全过`；一条 compareSpec 仍是一条断言
 - 差异 position 带通道前缀（`channel S33`）；`error_stats` 按通道名嵌套
 - 报告逐通道展示 pass/fail、容差与统计；JSON 输出中通道差异按 per-channel 配额截断
-- 自定义误差指标通过 `ChannelData.extra_stats`（自由 dict）并入通道 stats；
-  但 verdict 不可由插件干预——需要自定 verdict 请走自主泳道
+- 自定义误差指标通过 `ChannelData.extra_stats` 附带，存放在**独立命名空间**
+  （`ChannelResult.extra_stats`），不可能覆盖框架规范指标（`max_abs_error`、
+  `total` 等）；报告逐通道分别渲染两个命名空间
+- verdict 不可由插件干预——需要自定 verdict 请走自主泳道
 
 #### 数据泳道：内置 `script_extract` 类型（零改动脚本接入）
 
@@ -2127,15 +2133,16 @@ from symtest.file_comparator import ComparatorBase, CompareContext, ComparisonRe
 class MyAnalysisComparator(ComparatorBase):
     path_params = ("script", "case_dir")
 
-    def __init__(self, script="", case_dir=None, pass_threshold=1e-6, **kwargs):
-        super().__init__(**kwargs)
-        self.script = script
+    def __init__(self, script="", case_dir=None, pass_threshold=1e-6):
+        super().__init__()   # 参数严格：未声明/拼错的配置键在构造时报错
+        self.script = script      # 构造前已由框架按 workspace 解析
         self.case_dir = case_dir
         self.pass_threshold = pass_threshold
 
     def compare(self, ctx: CompareContext) -> ComparisonResult:
         result = ComparisonResult(
-            file1=str(ctx.baseline or ""), file2=str(ctx.actual or "")
+            file1=ctx.baseline,   # 无文件输入时保持 None，不伪造空串
+            file2=ctx.actual,
         )
         # ... 执行分析、解析指标 ...
         result.identical = True  # 或 False + differences
@@ -2143,8 +2150,9 @@ class MyAnalysisComparator(ComparatorBase):
         return result
 ```
 
-`ctx` 字段：`workspace` / `actual` / `baseline`（可空）/ `params`（compareSpec
-透传全量，含 `inputs` 等自由键）/ `error_analysis`。
+`ctx` 字段（仅调用级上下文）：`workspace` / `actual` / `baseline`（可空，
+无文件输入时为 `None`）/ `params`（文件泳道窗口参数）/ `error_analysis`。
+比较器配置的唯一权威在构造器捕获的实例状态中——`ctx` 不携带配置副本。
 
 #### 内置 `script` 类型比较器（自主泳道开箱即用）
 

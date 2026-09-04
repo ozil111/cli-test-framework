@@ -116,8 +116,9 @@ class TestAggregation:
 
 
 class TestExtraStats:
-    def test_extra_stats_merged_into_channel_stats(self):
-        """Plugin-defined error-analysis metrics ride along in stats."""
+    def test_extra_stats_in_separate_namespace(self):
+        """Plugin-defined metrics live in ChannelResult.extra_stats, never
+        merged into framework-owned canonical stats."""
         data = {
             "S33": ChannelData(
                 expected=np.array([1.0]),
@@ -127,10 +128,36 @@ class TestExtraStats:
         }
         cmp = FakeExtractor(channels_data=data)
         result = cmp.compare(_ctx())
-        stats = result.channels[0].stats
-        assert stats["asymmetry"] == 1.5e-13
-        assert stats["verdict"] == "PASS"
-        assert result.error_stats["S33"]["asymmetry"] == 1.5e-13
+        ch = result.channels[0]
+        # Canonical stats untouched by plugin metrics
+        assert "asymmetry" not in ch.stats
+        assert "verdict" not in ch.stats
+        assert ch.stats["max_abs_error"] is not None or ch.stats["total"] == 1
+        # Plugin metrics ride along in their own namespace
+        assert ch.extra_stats["asymmetry"] == 1.5e-13
+        assert ch.extra_stats["verdict"] == "PASS"
+        # Serialized shape keeps the namespaces distinct
+        d = ch.to_dict()
+        assert d["extra_stats"]["asymmetry"] == 1.5e-13
+        assert "asymmetry" not in d["stats"]
+
+    def test_extra_stats_cannot_overwrite_canonical_stats(self):
+        """A plugin providing canonical-looking keys must NOT overwrite
+        framework-owned metrics."""
+        data = {
+            "S33": ChannelData(
+                expected=np.array([1.0]),
+                actual=np.array([900.0]),  # canonical max_abs_error = 899.0
+                extra_stats={"max_abs_error": 123.0, "total": 999},
+            ),
+        }
+        cmp = FakeExtractor(channels_data=data)
+        result = cmp.compare(_ctx())
+        ch = result.channels[0]
+        assert ch.stats["max_abs_error"] == pytest.approx(899.0)
+        assert ch.stats["total"] == 1
+        assert ch.extra_stats["max_abs_error"] == 123.0
+        assert ch.extra_stats["total"] == 999
 
 
 class TestErrorHandling:
@@ -179,7 +206,9 @@ class TestDataFilter:
 
 class TestAssertionsIntegration:
     def test_compare_files_resolves_path_params(self, tmp_path, monkeypatch):
-        """Assertions.compare_files resolves path_params against workspace."""
+        """Assertions.compare_files resolves path_params against workspace
+        BEFORE construction: constructor-captured state already holds the
+        absolute path (single source of truth — ctx.params carries no copy)."""
         from symtest.file_comparator.factory import ComparatorFactory
         from symtest.core.validation.assertions import Assertions
 
@@ -188,13 +217,15 @@ class TestAssertionsIntegration:
         class PathParamExtractor(FakeExtractor):
             path_params = ("data_file",)
 
-            def __init__(self, **kwargs):
+            def __init__(self, data_file="", **kwargs):
                 super().__init__(**kwargs)
+                # Constructor-captured state must already be workspace-resolved.
+                self.data_file = data_file
 
             def extract(self, ctx):
-                captured["params"] = dict(ctx.params)
-                data_file = ctx.params["data_file"]
-                values = [float(x) for x in Path(data_file).read_text().split()]
+                captured["ctor_data_file"] = self.data_file
+                captured["ctx_params"] = dict(ctx.params)
+                values = [float(x) for x in Path(self.data_file).read_text().split()]
                 return {"v": ChannelData(expected=values, actual=values)}
 
         monkeypatch.setattr(
@@ -213,8 +244,10 @@ class TestAssertionsIntegration:
             data_file="values.txt",  # workspace-relative
         )
         assert response["identical"] is True
-        resolved = captured["params"]["data_file"]
+        resolved = captured["ctor_data_file"]
         assert Path(resolved).is_absolute()
         assert Path(resolved) == data_file
+        # ctx.params is invocation-level only — no configuration copy.
+        assert "data_file" not in captured["ctx_params"]
         assert response["channels"][0]["name"] == "v"
         assert response["channels"][0]["passed"] is True

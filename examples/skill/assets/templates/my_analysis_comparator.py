@@ -17,10 +17,15 @@ v2 contract notes (breaking vs. pre-2.x):
 - Implement `compare(self, ctx) -> ComparisonResult`; do NOT override
   `compare_files`, and do NOT implement `read_content`/`compare_content`
   (they no longer exist on the root class).
-- `ctx` carries workspace / actual / baseline / params (full compareSpec
-  passthrough) / error_analysis.
+- `ctx` carries invocation context only: workspace / actual / baseline /
+  params (window ranges) / error_analysis.  Comparator configuration lives
+  ONLY in constructor state (single source of truth).
 - Declare path-like constructor params in `path_params`; the framework
-  resolves them against the workspace.  Never resolve paths against CWD.
+  resolves them against the workspace BEFORE construction.  Never resolve
+  paths against CWD.
+- Constructor parameters are STRICT: unknown/misspelled compareSpec keys
+  fail loudly at construction.  Opt into free-form config only explicitly
+  (your own `**params` catch-all).
 """
 
 from symtest.file_comparator.base_comparator import BaseComparator, CompareContext
@@ -30,18 +35,16 @@ from symtest.file_comparator.result import ComparisonResult, Difference
 class MyAnalysisComparator(BaseComparator):
     """
     @brief Analysis-style comparator that owns its verdict.
-    @details The framework constructs it with verbose plus every extra kwarg
-             from the config compareSpec, so __init__ must forward **kwargs
-             to super().
+    @details Constructor parameters are strict — a misspelled config key
+             (e.g. "pass_threhsold") fails construction instead of silently
+             using the default.
     """
 
     # Constructor params holding filesystem paths (framework-resolved).
     path_params = ("script", "case_dir")
 
-    def __init__(self, script="", case_dir=None, pass_threshold=1e-6, **kwargs):
-        # IMPORTANT: forward **kwargs so framework params (verbose, ...)
-        # never break construction.
-        super().__init__(**kwargs)
+    def __init__(self, script="", case_dir=None, pass_threshold=1e-6):
+        super().__init__()
         self.script = script
         self.case_dir = case_dir  # already workspace-resolved via path_params
         self.pass_threshold = pass_threshold

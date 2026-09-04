@@ -133,15 +133,31 @@ by verdict ownership:
 
 Hard rules for all lanes:
 
-- Declare path-like constructor params in the `path_params` class attribute;
-  the framework resolves them against the workspace. NEVER resolve paths
-  against `os.getcwd()` (unreliable under parallel/process execution).
-- Always forward `**kwargs` from `__init__` to `super().__init__()`.
-- File naming `*_comparator.py`, class naming `*Comparator`; optional
-  `comparator_type` class attribute overrides the registered type name.
-- Data-lane plugins cannot alter pass/fail (framework-owned); custom error
-  metrics ride along via `ChannelData.extra_stats`. Custom VERDICT requires
-  the autonomous lane.
+- **Strict configuration**: declare constructor parameters explicitly.
+  Unknown/misspelled compareSpec keys fail loudly at construction (the error
+  names the comparator type and its supported parameters). Free-form config
+  is an explicit plugin opt-in (its own `**params` catch-all), never a
+  framework default. Put plugin-owned config under the `options` compareSpec
+  key to keep the core schema generic.
+- **Path ownership**: declare path-like constructor params in the
+  `path_params` class attribute; the framework resolves them against the
+  workspace BEFORE construction, so constructor state already holds absolute
+  paths. NEVER resolve paths against `os.getcwd()` (unreliable under
+  parallel/process execution).
+- **One source of truth**: comparator configuration lives only in
+  constructor-captured state; `CompareContext` carries invocation-level
+  context (workspace, actual/baseline, window ranges), never a second copy
+  of configuration.
+- **Naming**: file `*_comparator.py`, class `*Comparator`; optional
+  `comparator_type` class attribute overrides the registered type name;
+  abstract base classes are never registered.
+- **Result semantics**: data-lane plugins cannot alter pass/fail
+  (framework-owned). Plugin metrics ride along via `ChannelData.extra_stats`
+  — a SEPARATE namespace that can never overwrite canonical stats
+  (`max_abs_error`, `total`, ...). Channel results are rendered exclusively
+  from `ComparisonResult.channels`. Custom VERDICT requires the autonomous
+  lane; autonomous comparators without file inputs leave
+  `file1`/`file2` as `None` (no fake empty strings).
 
 Full details (config examples, JSON protocol, result semantics, report
 rendering): `references/user_manual.md` → "自定义文件比较器".

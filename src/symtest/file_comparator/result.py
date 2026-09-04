@@ -69,14 +69,17 @@ class ChannelResult:
              channel passed its own tolerance.
     """
 
-    def __init__(self, name, passed, rtol=1e-5, atol=1e-8, stats=None, differences=None):
+    def __init__(self, name, passed, rtol=1e-5, atol=1e-8, stats=None,
+                 extra_stats=None, differences=None):
         """
         @param name str: Channel name (as returned by the extractor)
         @param passed bool: Whether this channel passed its tolerance
         @param rtol float: Relative tolerance applied to this channel
         @param atol float: Absolute tolerance applied to this channel
-        @param stats dict|None: Error statistics (compare_numeric summary +
-               plugin ``extra_stats`` merged in)
+        @param stats dict|None: Framework-owned canonical statistics
+               (compare_numeric summary).  Never overridable by plugins.
+        @param extra_stats dict|None: Plugin-owned metrics in a SEPARATE
+               namespace — plugins cannot overwrite canonical stats.
         @param differences list: Difference objects (positions carry the
                channel name as prefix)
         """
@@ -85,6 +88,7 @@ class ChannelResult:
         self.rtol = rtol
         self.atol = atol
         self.stats = stats
+        self.extra_stats = extra_stats
         self.differences = differences or []
 
     def __str__(self):
@@ -104,6 +108,7 @@ class ChannelResult:
             "rtol": self.rtol,
             "atol": self.atol,
             "stats": self.stats,
+            "extra_stats": self.extra_stats,
             "differences": [d.to_dict() for d in self.differences],
         }
 

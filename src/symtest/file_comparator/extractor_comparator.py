@@ -63,8 +63,7 @@ class ExtractorComparator(ComparatorBase):
     """
 
     def __init__(self, channels=None, default_channel=None,
-                 rtol: float = 1e-5, atol: float = 1e-8,
-                 verbose: bool = False, **kwargs):
+                 rtol: float = 1e-5, atol: float = 1e-8):
         """
         @param channels dict|None: ``{channel_name: {"rtol":…, "atol":…,
                "data_filter":…}}`` overrides; unset keys fall back to
@@ -73,8 +72,9 @@ class ExtractorComparator(ComparatorBase):
                not listed in ``channels``.
         @param rtol float: Final fallback relative tolerance (default 1e-5).
         @param atol float: Final fallback absolute tolerance (default 1e-8).
+        @note Parameters are strict: unknown/misspelled config keys fail loudly.
         """
-        super().__init__(verbose=verbose, **kwargs)
+        super().__init__()
         self.channel_specs: Dict[str, Dict[str, Any]] = dict(channels or {})
         self.default_spec: Dict[str, Any] = dict(default_channel or {})
         self.rtol = rtol
@@ -95,8 +95,8 @@ class ExtractorComparator(ComparatorBase):
     # ------------------------------------------------------------------
     def compare(self, ctx: CompareContext) -> ComparisonResult:  # type: ignore[override]
         result = ComparisonResult(
-            file1=str(ctx.baseline) if ctx.baseline else "",
-            file2=str(ctx.actual) if ctx.actual else "",
+            file1=ctx.baseline,
+            file2=ctx.actual,
         )
         try:
             channels_data = self.extract(ctx)
@@ -143,6 +143,9 @@ class ExtractorComparator(ComparatorBase):
                 aggregated_differences.append(diff)
                 continue
 
+            # Framework-owned canonical stats and plugin-owned extra_stats
+            # are kept in SEPARATE namespaces: a plugin must never be able to
+            # overwrite canonical metrics such as max_abs_error.
             stats: Dict[str, Any] = {
                 "total": res.total,
                 "mismatched": res.mismatched,
@@ -151,8 +154,6 @@ class ExtractorComparator(ComparatorBase):
                 "mean_abs_error": res.mean_abs_error,
                 "rms_abs_error": res.rms_abs_error,
             }
-            if data.extra_stats:
-                stats.update(data.extra_stats)
 
             passed = res.mismatched == 0
             differences = []
@@ -172,7 +173,8 @@ class ExtractorComparator(ComparatorBase):
 
             channel_results.append(ChannelResult(
                 name=name, passed=passed, rtol=rtol, atol=atol,
-                stats=stats, differences=differences,
+                stats=stats, extra_stats=data.extra_stats,
+                differences=differences,
             ))
             error_stats[name] = stats
 

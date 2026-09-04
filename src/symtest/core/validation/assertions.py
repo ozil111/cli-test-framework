@@ -201,6 +201,19 @@ class Assertions:
         if "end_column" in method_params and method_params["end_column"] is not None:
             method_params["end_column"] = max(0, int(method_params["end_column"]) - 1)
 
+        # Plugin configuration namespace: "options" is framework-owned
+        # structure; its entries are merged into constructor kwargs.
+        # Explicit top-level keys take precedence (legacy compatibility).
+        options = comparator_kwargs.pop("options", None)
+        if options is not None:
+            if not isinstance(options, dict):
+                raise ValidationError(
+                    f"'options' must be an object of comparator parameters, "
+                    f"got: {type(options).__name__}",
+                    failure_kind="file_compare",
+                )
+            comparator_kwargs = {**options, **comparator_kwargs}
+
         # Collect tolerances for reporting (before they're consumed by factory)
         reported_kwargs = {
             k: v for k, v in comparator_kwargs.items()
@@ -208,30 +221,24 @@ class Assertions:
         }
 
         try:
+            # Lifecycle: the factory resolves path_params-declared parameters
+            # against the workspace BEFORE construction, so constructor-captured
+            # state (self.script, self.cwd, ...) already holds absolute paths.
             comparator = ComparatorFactory.create_comparator(
                 file_type,
-                verbose=True,  # always include diff details in the assertion message
+                workspace=workspace,
                 error_analysis=error_analysis,
                 **comparator_kwargs,
             )
-
-            # Resolve plugin-declared path parameters relative to the workspace
-            # (comparator.path_params).  actual/baseline were resolved above;
-            # plugins must never resolve paths against os.getcwd() themselves.
-            if workspace:
-                for param_name in getattr(comparator, "path_params", ()):
-                    value = comparator_kwargs.get(param_name)
-                    if isinstance(value, str) and value and not os.path.isabs(value):
-                        comparator_kwargs[param_name] = os.path.join(workspace, value)
 
             ctx = CompareContext(
                 workspace=workspace,
                 actual=actual_path or None,
                 baseline=baseline_path or None,
-                # Full compareSpec passthrough: window params (0-based) for the
-                # file lane + all remaining plugin params for data/autonomous
-                # lanes to inspect (e.g. "inputs").
-                params={**comparator_kwargs, **method_params},
+                # Invocation-level parameters only (file-lane window ranges).
+                # Comparator configuration lives solely in comparator state —
+                # one authoritative source per configuration value.
+                params=method_params,
                 error_analysis=error_analysis,
             )
             result = comparator.compare(ctx)

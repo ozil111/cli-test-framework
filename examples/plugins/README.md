@@ -63,12 +63,17 @@ class HelloComparator(BaseComparator):
 | 字段 | 说明 |
 |---|---|
 | `workspace` | workspace 根目录 |
-| `actual` / `baseline` | 命令输出 / 基准文件路径（可空，已按 workspace 解析） |
-| `params` | compareSpec 透传全量（`actual`/`baseline`/`type` 之外的键） |
+| `actual` / `baseline` | 命令输出 / 基准文件路径（无文件输入时为 `None`，构造前已按 workspace 解析） |
+| `params` | 调用级参数（文件泳道窗口范围）；**不携带比较器配置副本** |
 | `error_analysis` | 是否启用误差统计（`--error-analysis`） |
 
 **路径解析**：`actual`/`baseline` 以及插件 `path_params` 类属性声明的路径参数
-由框架统一按 workspace 解析。插件内部**禁止**对 CWD 做 `Path.resolve()`。
+由框架在**构造之前**按 workspace 解析——构造器捕获的状态已是绝对路径。
+插件内部**禁止**对 CWD 做 `Path.resolve()`。
+
+**严格配置**：构造器参数显式声明；未声明/拼错的配置键在构造时大声失败
+（错误含比较器类型名与支持参数清单）。自由参数仅限插件显式 `**params` opt-in。
+插件自有配置建议放 `options` compareSpec 键（并入构造参数，顶层键优先）。
 
 ### 数据泳道：通道提取器
 
@@ -81,8 +86,8 @@ from symtest.file_comparator import ExtractorComparator, ChannelData, CompareCon
 class MyExtractor(ExtractorComparator):
     path_params = ("ref_csv", "actual_csv")
 
-    def __init__(self, ref_csv="", actual_csv="", **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, ref_csv="", actual_csv=""):
+        super().__init__()
         self.ref_csv, self.actual_csv = ref_csv, actual_csv
 
     def extract(self, ctx):
@@ -133,16 +138,18 @@ result.command_output = "stdout from subprocess"  # 在报告中渲染
 return result
 ```
 
-### 配置参数透传
+### 配置参数（严格校验）
 
-配置 `compareSpec` 中 `actual`/`baseline`/`type` 之外的所有字段都会作为
-`**kwargs` 透传给你的比较器构造函数：
+配置 `compareSpec` 中 `actual`/`baseline`/`type` 之外的键会作为
+`**kwargs` 传给你的比较器构造函数，但**参数是严格的**：构造器未声明的键
+（如拼写错误 `pass_threhsold`）会抛出带类型名与支持参数清单的
+`TypeError`，绝不静默回退到默认值。插件自有配置推荐放 `options`
+命名空间（并入构造参数，显式顶层键优先）：
 
 ```json
 {
     "type": "myanalysis",
-    "param1": "value1",
-    "param2": 42
+    "options": {"param1": "value1", "param2": 42}
 }
 ```
 
@@ -150,8 +157,8 @@ return result
 
 ```python
 class MyAnalysisComparator(BaseComparator):
-    def __init__(self, param1="", param2=0, encoding="utf-8", **kwargs):
-        super().__init__(encoding=encoding, **kwargs)
+    def __init__(self, param1="", param2=0):
+        super().__init__()   # 根类不再接收/忽略任意 kwargs
         self.param1 = param1
         self.param2 = param2
 ```

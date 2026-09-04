@@ -57,7 +57,10 @@ class TestValidPayloads:
         """), encoding="utf-8")
         cmp = ScriptExtractComparator(script=str(script))
         result = cmp.compare(CompareContext())
-        assert result.channels[0].stats["asymmetry"] == 2e-13
+        ch = result.channels[0]
+        # Plugin metrics live in the separate extra_stats namespace
+        assert ch.extra_stats["asymmetry"] == 2e-13
+        assert "asymmetry" not in ch.stats
 
     def test_per_channel_tolerance_routing(self, tmp_path):
         script = tmp_path / "extract.py"

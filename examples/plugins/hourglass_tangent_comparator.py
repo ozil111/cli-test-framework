@@ -162,11 +162,10 @@ class HourglassTangentComparator(ComparatorBase):  # type: ignore
         pass_threshold: float = 1e-6,
         interpreter: Optional[str] = None,
         timeout: int = 600,
-        **kwargs,
     ):
-        super().__init__(**kwargs)
-        self.script = script
-        self.case_dir = case_dir
+        super().__init__()
+        self.script = script      # workspace-resolved by the framework (path_params)
+        self.case_dir = case_dir  # workspace-resolved by the framework (path_params)
         self.pass_threshold = pass_threshold
         self.interpreter = interpreter or sys.executable
         self.timeout = timeout
@@ -177,8 +176,8 @@ class HourglassTangentComparator(ComparatorBase):  # type: ignore
     def compare(self, ctx: CompareContext) -> ComparisonResult:  # type: ignore[override]
         """Execute the hourglass analysis script and parse results."""
         result = ComparisonResult(
-            file1=str(ctx.baseline) if ctx.baseline else "",
-            file2=str(ctx.actual) if ctx.actual else "",
+            file1=ctx.baseline,
+            file2=ctx.actual,
         )
 
         try:
