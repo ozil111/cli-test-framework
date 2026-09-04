@@ -10,10 +10,10 @@
 
 import difflib
 import hashlib
-from .base_comparator import BaseComparator
+from .file_comparator_base import FileComparator
 from .result import Difference
 
-class BinaryComparator(BaseComparator):
+class BinaryComparator(FileComparator):
     """
     @brief Comparator for binary files with efficient byte-level comparison
     @details This class implements binary file comparison with support for:
@@ -33,7 +33,8 @@ class BinaryComparator(BaseComparator):
         @param num_threads int: Number of threads for parallel processing
         @param **kwargs: Additional parameters (ignored)
         """
-        super().__init__(encoding=encoding, chunk_size=chunk_size, verbose=verbose, **kwargs)
+        super().__init__(encoding=encoding, verbose=verbose, **kwargs)
+        self.chunk_size = chunk_size  # file-lane concern, owned here since v2
         self.similarity = similarity
         self.num_threads = num_threads
 

@@ -14,6 +14,7 @@ import argparse
 import logging
 from pathlib import Path
 from ..file_comparator.factory import ComparatorFactory
+from ..file_comparator.base_comparator import CompareContext
 from ..file_comparator.result import ComparisonResult
 
 logger = logging.getLogger("symtest.commands.compare")
@@ -186,14 +187,18 @@ def run_comparison(args, logger=None):
 
     # Create comparator and perform comparison
     comparator = ComparatorFactory.create_comparator(file_type, **comparator_kwargs)
-    result = comparator.compare_files(
-        file1_path,
-        file2_path,
-        start_line,
-        end_line,
-        start_column,
-        end_column
+    # CLI semantics: file1 = first file (baseline slot), file2 = second (actual slot)
+    ctx = CompareContext(
+        actual=str(file2_path),
+        baseline=str(file1_path),
+        params={
+            "start_line": start_line,
+            "end_line": end_line,
+            "start_column": start_column,
+            "end_column": end_column,
+        },
     )
+    result = comparator.compare(ctx)
 
     # Output result
     output = format_result(result, args.output_format)

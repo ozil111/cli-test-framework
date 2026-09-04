@@ -1,11 +1,11 @@
-from .base_comparator import BaseComparator
+from .file_comparator_base import FileComparator
 import h5py
 import numpy as np
 import logging
 import re
 from .numeric_compare import compare_numeric, parse_data_filter
 
-class H5Comparator(BaseComparator):
+class H5Comparator(FileComparator):
     def __init__(self, tables=None, table_regex=None, structure_only=False, show_content_diff=False, debug=False, rtol=1e-5, atol=1e-8, expand_path=True, data_filter=None, error_analysis=False, **kwargs):
         """
         Initialize H5 comparator

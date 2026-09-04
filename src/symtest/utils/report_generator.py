@@ -15,6 +15,63 @@ def _format_flaky_label(detail: dict) -> str:
     return ""
 
 
+def _is_channel_stats(es: dict) -> bool:
+    """Data-lane error_stats shape: {channel_name: {stat_key: value}}."""
+    return bool(es) and all(isinstance(v, dict) for v in es.values())
+
+
+def _render_stats(es: dict, indent: str) -> str:
+    """Render an error_stats dict, with a per-channel block for data-lane shape.
+
+    Flat stats (built-in csv/h5/script comparators) render one ``key: value``
+    line each.  Channel-shaped stats (extractor comparators) render a nested
+    block per channel, so per-channel pass/fail and metrics stay readable.
+    """
+    out = ""
+    if _is_channel_stats(es):
+        for name, stats in es.items():
+            out += f"{indent}channel '{name}':\n"
+            for key, val in stats.items():
+                if isinstance(val, float):
+                    out += f"{indent}  {key}: {val:.6g}\n"
+                else:
+                    out += f"{indent}  {key}: {val}\n"
+    else:
+        for key, val in es.items():
+            if isinstance(val, float):
+                out += f"{indent}{key}: {val:.6g}\n"
+            else:
+                out += f"{indent}{key}: {val}\n"
+    return out
+
+
+def _render_channels(channels: list, indent: str) -> str:
+    """Render a channels sub-result list (from serialized ChannelResult dicts)."""
+    out = ""
+    for ch in channels:
+        verdict = "PASS" if ch.get("passed") else "FAIL"
+        out += (
+            f"{indent}channel '{ch.get('name')}': {verdict} "
+            f"(rtol={ch.get('rtol', 0):g}, atol={ch.get('atol', 0):g})\n"
+        )
+        stats = ch.get("stats")
+        if stats:
+            for key, val in stats.items():
+                if isinstance(val, float):
+                    out += f"{indent}  {key}: {val:.6g}\n"
+                else:
+                    out += f"{indent}  {key}: {val}\n"
+        diffs = ch.get("differences", [])
+        for d in diffs[:3]:
+            out += (
+                f"{indent}  {d.get('position')}: "
+                f"expected={d.get('expected')}, actual={d.get('actual')}\n"
+            )
+        if len(diffs) > 3:
+            out += f"{indent}  ... and {len(diffs) - 3} more\n"
+    return out
+
+
 class ReportGenerator:
     def __init__(self, results: dict, file_path: str):
         self.results = results
@@ -70,11 +127,11 @@ class ReportGenerator:
                     es = ar.get('error_stats')
                     if es:
                         report += "   error_stats:\n"
-                        for key, val in es.items():
-                            if isinstance(val, float):
-                                report += f"     {key}: {val:.6g}\n"
-                            else:
-                                report += f"     {key}: {val}\n"
+                        report += _render_stats(es, indent="     ")
+                    channels = ar.get('channels')
+                    if channels:
+                        report += "   channels:\n"
+                        report += _render_channels(channels, indent="     ")
 
         # 添加失败案例的详细输出信息（含 xfailed、xpassed、timeout 等非通过状态）
         failed_tests = [detail for detail in self.results['details'] if detail['status'] != 'passed']
@@ -134,11 +191,12 @@ class ReportGenerator:
                         es = cf.get('error_stats')
                         if es:
                             report += "    error_stats:\n"
-                            for key, val in es.items():
-                                if isinstance(val, float):
-                                    report += f"      {key}: {val:.6g}\n"
-                                else:
-                                    report += f"      {key}: {val}\n"
+                            report += _render_stats(es, indent="      ")
+                        # ── Per-channel sub-results (data-lane comparators) ──
+                        channels = cf.get('channels')
+                        if channels:
+                            report += "    channels:\n"
+                            report += _render_channels(channels, indent="      ")
                         diffs = cf.get('differences', [])
                         if diffs:
                             report += "    sample differences:\n"

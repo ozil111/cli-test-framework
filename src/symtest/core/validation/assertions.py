@@ -10,6 +10,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from ...file_comparator.factory import ComparatorFactory
+from ...file_comparator.base_comparator import CompareContext
 
 logger = logging.getLogger("symtest.core.validation.assertions")
 
@@ -61,6 +62,9 @@ def _build_diff_summary(result: Any) -> Dict[str, Any]:
     - ``total_differences``
     - ``max_rel_error`` / ``max_abs_error`` (for cells that are numeric)
     - ``max_rel_error_at`` / ``max_abs_error_at`` (position string)
+
+    Data-lane results additionally carry per-channel ``channels``; each
+    channel contributes a ``passed`` flag and its own error stats.
     """
     differences = getattr(result, "differences", []) or []
     summary: Dict[str, Any] = {
@@ -87,6 +91,19 @@ def _build_diff_summary(result: Any) -> Dict[str, Any]:
                 summary["max_rel_error_at"] = pos
         except (ValueError, TypeError):
             pass
+
+    channels = getattr(result, "channels", None)
+    if channels:
+        summary["channels"] = {
+            ch.name: {
+                "passed": bool(ch.passed),
+                "rtol": ch.rtol,
+                "atol": ch.atol,
+                "max_abs_error": (ch.stats or {}).get("max_abs_error"),
+                "max_rel_error": (ch.stats or {}).get("max_rel_error"),
+            }
+            for ch in channels
+        }
     return summary
 
 
@@ -197,7 +214,27 @@ class Assertions:
                 error_analysis=error_analysis,
                 **comparator_kwargs,
             )
-            result = comparator.compare_files(baseline_path, actual_path, **method_params)
+
+            # Resolve plugin-declared path parameters relative to the workspace
+            # (comparator.path_params).  actual/baseline were resolved above;
+            # plugins must never resolve paths against os.getcwd() themselves.
+            if workspace:
+                for param_name in getattr(comparator, "path_params", ()):
+                    value = comparator_kwargs.get(param_name)
+                    if isinstance(value, str) and value and not os.path.isabs(value):
+                        comparator_kwargs[param_name] = os.path.join(workspace, value)
+
+            ctx = CompareContext(
+                workspace=workspace,
+                actual=actual_path or None,
+                baseline=baseline_path or None,
+                # Full compareSpec passthrough: window params (0-based) for the
+                # file lane + all remaining plugin params for data/autonomous
+                # lanes to inspect (e.g. "inputs").
+                params={**comparator_kwargs, **method_params},
+                error_analysis=error_analysis,
+            )
+            result = comparator.compare(ctx)
 
             # Build structured response
             diff_summary = _build_diff_summary(result)
@@ -215,6 +252,10 @@ class Assertions:
                 ),
                 "error_stats": result.error_stats,
                 "command_output": result.command_output,
+                "channels": (
+                    [ch.to_dict() for ch in result.channels]
+                    if result.channels else []
+                ),
             }
 
             if result.error:

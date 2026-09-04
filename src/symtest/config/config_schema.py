@@ -95,7 +95,8 @@ CONFIG_SCHEMA: Dict[str, Any] = {
             "description": (
                 "One file comparison rule. actual/baseline are required for built-in "
                 "file-type comparators (text/csv/json/xml/h5/binary). "
-                "They are optional for script or custom (plugin) comparator types. "
+                "They are optional for script, script_extract, or custom (plugin) "
+                "comparator types. "
                 "Keys other than those listed below are forwarded to the comparator "
                 "as kwargs (e.g. rtol, atol, encoding, tables, data_filter, "
                 "pass_threshold, pass_pattern)."
@@ -103,25 +104,50 @@ CONFIG_SCHEMA: Dict[str, Any] = {
             "properties": {
                 "actual": {
                     "type": "string",
-                    "description": "File produced by the test command. Optional when type is 'script' or a workspace plugin.",
+                    "description": "File produced by the test command. Optional when type is 'script', 'script_extract', or a workspace plugin.",
                 },
                 "baseline": {
                     "type": "string",
-                    "description": "Golden/reference file. Optional when type is 'script' or a workspace plugin.",
+                    "description": "Golden/reference file. Optional when type is 'script', 'script_extract', or a workspace plugin.",
                 },
                 "type": {
                     "type": "string",
                     "description": (
-                        "Comparator type. Built-ins: text, json, csv, xml, h5, binary, script. "
+                        "Comparator type. Built-ins: text, json, csv, xml, h5, binary, "
+                        "script, script_extract. "
                         "Custom (workspace plugin) comparator types are also allowed. "
                         "Omit to auto-detect from the actual file extension."
+                    ),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Free-form named inputs for data-lane plugins (script_extract "
+                        "or custom extractors). Path-valued entries declared in the "
+                        "plugin's path_params are resolved relative to the workspace."
+                    ),
+                },
+                "channels": {
+                    "type": "object",
+                    "description": (
+                        "Per-channel tolerance overrides for data-lane comparators "
+                        "(script_extract / extractor plugins). Maps channel name to "
+                        "{'rtol':…, 'atol':…, 'data_filter':…}. Channels not listed "
+                        "use default_channel."
+                    ),
+                },
+                "default_channel": {
+                    "type": "object",
+                    "description": (
+                        "Default tolerance spec {'rtol':…, 'atol':…, 'data_filter':…} "
+                        "applied to channels not listed in 'channels'."
                     ),
                 },
                 "start_line": {"type": "integer", "minimum": 1, "description": "Only compare from this line (1-based)."},
                 "end_line": {"type": "integer", "minimum": 1, "description": "Only compare up to this line (1-based)."},
                 "start_column": {"type": "integer", "minimum": 1, "description": "Only compare from this column (1-based)."},
                 "end_column": {"type": "integer", "minimum": 1, "description": "Only compare up to this column (1-based)."},
-                "script": {"type": "string", "description": "Path to the analysis script (script / custom comparator types)."},
+                "script": {"type": "string", "description": "Path to the analysis script (script / script_extract / custom comparator types)."},
                 "case_dir": {"type": "string", "description": "Working directory for the analysis script."},
                 "cwd": {"type": "string", "description": "Working directory for script execution (alias for case_dir)."},
                 "pass_threshold": {"type": "number", "description": "Numeric threshold below which the comparison is considered a pass."},

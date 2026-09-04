@@ -172,6 +172,7 @@ def test_validate_result_compare_files_passes():
                 "assertion": "compare_files",
                 "passed": True,
                 "error_stats": None,
+                "channels": [],
                 "compare_failures": [],
                 "baseline_updated": [],
                 "message": "",

@@ -125,6 +125,123 @@ def test_error_analysis_all_disabled_omits_stats_for_passed():
     assert "error_stats" not in report
 
 
+# ── channel sub-results (data-lane comparators) ──
+
+def _make_failed_detail_with_channels():
+    """构造一个带通道子结果的失败用例 detail dict（extractor 比较器形态）"""
+    return {
+        "name": "channel_case",
+        "status": "failed",
+        "failure_kind": "file_compare",
+        "compare_failures": [
+            {
+                "actual": "out.dat",
+                "baseline": "ref.dat",
+                "type": "my_extractor",
+                "diff_summary": {"total_differences": 1},
+                "error_stats": {
+                    "S11": {"total": 4, "mismatched": 0, "max_abs_error": 1e-9},
+                    "S33": {"total": 4, "mismatched": 2, "max_abs_error": 543.0},
+                },
+                "channels": [
+                    {
+                        "name": "S11",
+                        "passed": True,
+                        "rtol": 1e-5,
+                        "atol": 1e-8,
+                        "stats": {"total": 4, "mismatched": 0, "max_abs_error": 1e-9},
+                        "differences": [],
+                    },
+                    {
+                        "name": "S33",
+                        "passed": False,
+                        "rtol": 1e-5,
+                        "atol": 600.0,
+                        "stats": {"total": 4, "mismatched": 2, "max_abs_error": 543.0},
+                        "differences": [
+                            {"position": "channel S33", "expected": "within rtol=1e-05, atol=600",
+                             "actual": "2/4 values mismatched", "diff_type": "channel_mismatch"},
+                        ],
+                    },
+                ],
+                "differences": [
+                    {"position": "channel S33", "expected": "within rtol=1e-05, atol=600",
+                     "actual": "2/4 values mismatched", "diff_type": "channel_mismatch"},
+                ],
+            }
+        ],
+    }
+
+
+def test_channel_results_rendered_per_channel():
+    """失败报告应逐通道展示 pass/fail、容差与统计"""
+    generator = ReportGenerator(
+        {
+            "total": 1, "passed": 0, "failed": 1,
+            "details": [_make_failed_detail_with_channels()],
+        },
+        "unused.txt",
+    )
+    report = generator.generate_report()
+    assert "channels:" in report
+    assert "channel 'S11': PASS" in report
+    assert "channel 'S33': FAIL" in report
+    assert "atol=600" in report
+    assert "max_abs_error: 543" in report
+    assert "channel S33" in report
+
+
+def test_channel_shaped_error_stats_render_nested():
+    """通道形态的 error_stats（{name: {...}}）应按通道缩进渲染"""
+    generator = ReportGenerator(
+        {
+            "total": 1, "passed": 0, "failed": 1,
+            "details": [_make_failed_detail_with_channels()],
+        },
+        "unused.txt",
+    )
+    report = generator.generate_report()
+    assert "channel 'S11':" in report
+    assert "channel 'S33':" in report
+    assert "mismatched: 2" in report
+
+
+def test_channel_results_rendered_for_passed_with_error_analysis_all():
+    """--error-analysis-all 时通过用例也应渲染通道子结果"""
+    detail = {
+        "name": "ok_channels",
+        "status": "passed",
+        "assertion_results": [
+            {
+                "assertion": "compare_files",
+                "passed": True,
+                "error_stats": None,
+                "channels": [
+                    {
+                        "name": "U1",
+                        "passed": True,
+                        "rtol": 1e-5,
+                        "atol": 1e-8,
+                        "stats": {"total": 10, "mismatched": 0},
+                        "differences": [],
+                    },
+                ],
+            }
+        ],
+    }
+    generator = ReportGenerator(
+        {
+            "total": 1, "passed": 1, "failed": 0,
+            "error_analysis_all": True,
+            "details": [detail],
+        },
+        "unused.txt",
+    )
+    report = generator.generate_report()
+    assert "channel 'U1': PASS" in report
+    assert "total: 10" in report
+
+
 # ── xfail_quiet ──
 
 def _make_xfailed_detail(*, xfail_quiet=True):

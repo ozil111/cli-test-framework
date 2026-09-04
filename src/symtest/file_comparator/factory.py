@@ -10,12 +10,33 @@
 
 import importlib
 import importlib.util
+import inspect
 import os
 import pkgutil
 import logging
 from pathlib import Path
 
 logger = logging.getLogger("symtest.file_comparator.factory")
+
+
+def _register_discovered(attr) -> None:
+    """Register a discovered ``*Comparator`` class if it is concrete.
+
+    Type name resolution: explicit ``comparator_type`` class attribute wins
+    (e.g. ``ScriptExtractComparator -> "script_extract"``); otherwise the
+    class-name convention applies (``FooComparator -> "foo"``).
+    Abstract base classes (e.g. ``ExtractorComparator``) are skipped — they
+    are contracts, not instantiable comparator types.
+    """
+    if inspect.isabstract(attr):
+        return
+    type_name = getattr(attr, "comparator_type", None) or attr_name_type(attr.__name__)
+    ComparatorFactory.register_comparator(type_name, attr)
+
+
+def attr_name_type(class_name: str) -> str:
+    """Class-name convention: ``FooComparator`` -> ``foo``."""
+    return class_name.lower().replace("comparator", "")
 
 _ENV_VAR = "CLITEST_PLUGIN_DIRS"
 
@@ -107,8 +128,7 @@ class ComparatorFactory:
                         if (isinstance(attr, type) and
                             attr.__module__ == module.__name__ and
                             attr_name.endswith('Comparator')):
-                            type_name = attr_name.lower().replace('comparator', '')
-                            ComparatorFactory.register_comparator(type_name, attr)
+                            _register_discovered(attr)
                 except ImportError as e:
                     logger.warning("Failed to import comparator module %s: %s", module_info.name, e)
 
@@ -159,7 +179,10 @@ class ComparatorFactory:
                         if (isinstance(attr, type)
                                 and attr.__module__ == module.__name__
                                 and attr_name.endswith("Comparator")):
-                            type_name = attr_name.lower().replace("comparator", "")
+                            if inspect.isabstract(attr):
+                                continue
+                            type_name = getattr(attr, "comparator_type", None) or \
+                                attr_name.lower().replace("comparator", "")
                             ComparatorFactory.register_comparator(type_name, attr)
                             logger.info(
                                 "Registered workspace plugin '%s' -> %s from %s",
