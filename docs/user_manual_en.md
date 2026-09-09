@@ -48,7 +48,7 @@ HDF5 file comparison depends on `h5py` (installed with the framework). If you ne
 
 ## Test Case Definition
 
-> **Schema v2 (1.4)**: The config uses a layered DSL — execution-related fields (`command`, `args`, `timeout`, `retry_count`, `env`, `steps`) live in the `execution` block, scheduling-related fields (`depends_on`, `resources`) live in the `scheduling` block, and `expected` stays at the top level. The old flat layout was removed; use `symtest migrate` to migrate.
+> **Schema v2 (1.4)**: The config uses a layered DSL — execution-related fields (`command`, `args`, `timeout`, `retry_count`, `env`, `steps`) live in the `execution` block, scheduling-related fields (`depends_on`, `resources`) live in the `scheduling` block, and `expected` stays at the top level. The old flat layout was removed; use `symtest migrate` to migrate. Migration recursively covers the whole `import` tree: by default each file gets a `<stem>.v2<ext>` copy with import paths rewritten automatically; `--in-place` overwrites all files in place (mutually exclusive with `--output`).
 
 ### JSON Format
 
@@ -274,6 +274,13 @@ test_cases:
 | `expected.output_contains` | No | List of strings the output must contain |
 | `expected.output_matches` | No | Regex pattern the output must match (single string) |
 | `expected.compare_files` | No | File comparison assertions list, see below |
+
+### execution — pick one form (mutually exclusive)
+
+`execution` has two forms, **choose exactly one**; declaring both is a configuration error:
+
+- **Single-command form**: `command` + `args` (with optional `timeout` / `retry_count` / `env`)
+- **Steps form**: `steps` (a list; each step is `command + args + expected`); `command` / `args` must not be declared alongside `steps`
 
 ### File Comparison Assertions (compare_files)
 
@@ -1963,11 +1970,35 @@ class MySetup(BaseSetup):
 
 ### Custom File Comparator
 
-The framework supports three ways to extend comparison capabilities:
+#### Three-Lane Architecture (v2)
 
-#### Method 1: Workspace Plugin Directory (Recommended)
+The comparator plugin system is organized around the root contract
+`ComparatorBase.compare(ctx) -> ComparisonResult`, split by verdict ownership
+into three lanes:
 
-Create a `comparators/` directory under your workspace and place `*_comparator.py` files inside (following the same naming convention as built-in comparators). The framework auto-discovers and registers the `*Comparator` classes on first use.
+| Lane | Base class | Use case | Verdict owned by |
+|---|---|---|---|
+| **File lane** | `FileComparator` | Comparing two same-kind files (built-in text/json/csv/xml/h5/binary) | Plugin |
+| **Data lane** | `ExtractorComparator` | Extracting numeric data from any upstream (files / solver output / cross-file aggregation), reusing the framework numeric core for per-channel tolerance verdicts | **Framework** |
+| **Autonomous lane** | extend `ComparatorBase` directly | Custom verdict logic (composite thresholds, label parsing, sign/asymptotic checks) | Plugin |
+
+Selection guide:
+
+- Data is already `(expected, actual)` numeric arrays needing only rtol/atol → **data lane** (channels, per-channel tolerances, unified error_stats and report rendering)
+- Custom verdict needed (e.g. "tight on main components, loose on EAS components", sign checks) → **autonomous lane**
+- Just want to wire an existing script in quickly → built-in `script` (custom verdict) or `script_extract` (framework tolerance verdict), zero plugin code
+
+**Path resolution convention**: `actual`/`baseline` and any constructor params
+declared in the plugin's `path_params` class attribute are resolved against
+the workspace by the framework **before the comparator is constructed** —
+constructor-captured state (`self.script`, `self.cwd`, ...) already holds
+absolute paths. Plugins must
+**never** resolve paths against CWD — it is unreliable under parallel/process
+execution.
+
+#### Plugin Discovery (common to all lanes)
+
+Create a `comparators/` directory under your workspace and place `*_comparator.py` files inside. The framework auto-discovers and registers the `*Comparator` classes on first use.
 
 ```
 your-workspace/
@@ -1984,26 +2015,155 @@ symtest run test_config.json --plugin-dir ./extra_plugins
 
 Plugins are also automatically inherited by process-mode child processes via the `CLITEST_PLUGIN_DIRS` environment variable.
 
-**Plugin development notes**:
-- Inherit from `symtest.file_comparator.BaseComparator`
+**Naming conventions**:
+- File name must end with `_comparator.py` (e.g., `my_analysis_comparator.py`)
 - Class name must end with `Comparator` (e.g., `MyAnalysisComparator`)
-- The registered type name = class name without `Comparator`, lowercased (e.g., `myanalysis`)
-- Prefer overriding the `compare_files(file1, file2, **kwargs)` method over `read_content`/`compare_content` (if your comparator doesn't use the two-file model)
-- Construct structured results via `from symtest.file_comparator import ComparisonResult, Difference`
-- `extra_kwargs` are auto-passed from the config `compareSpec`
+- The registered type name = class name without `Comparator`, lowercased (e.g., `myanalysis`); a `comparator_type = "my_analysis"` class attribute overrides it
+- Abstract base classes (with unimplemented abstract methods) are skipped automatically
 
-Use the registered type name directly in your config:
+Use the registered type name directly in your config. Comparator constructor
+parameters are **strict**: keys other than `actual`/`baseline`/`type` are
+forwarded to the plugin constructor, but a parameter the plugin does not
+declare (e.g. a typo like `pass_threhsold`) **fails loudly** at construction
+(the error names the comparator type and its supported parameters) — it never
+silently falls back to defaults. Plugin-owned configuration should go into
+the `options` namespace (entries merged into constructor kwargs; explicit
+top-level keys take precedence), keeping the core schema generic:
 
 ```json
 {
   "type": "myanalysis",
   "actual": "optional_for_plugins",
   "baseline": "optional_for_plugins",
-  "param1": "value1"
+  "options": {"param1": "value1", "param2": 42}
 }
 ```
 
-#### Method 2: Built-in `script` Type Comparator
+#### Data Lane: Channel Extractor Plugin
+
+Use case: one script/plugin produces multi-channel data (e.g. different CSV
+columns, different physical quantities), each channel needing independent
+tolerances and error analysis. The plugin only EXTRACTS; the framework
+owns the verdict entirely.
+
+```python
+# comparators/uel_stress_comparator.py
+import numpy as np
+from symtest.file_comparator import (
+    ExtractorComparator, ChannelData, CompareContext,
+)
+
+class UelStressComparator(ExtractorComparator):
+    path_params = ("uel_csv", "ref_csv")   # workspace-resolved by framework
+
+    def __init__(self, uel_csv="", ref_csv="", **kwargs):
+        super().__init__(**kwargs)
+        self.uel_csv = uel_csv
+        self.ref_csv = ref_csv
+
+    def extract(self, ctx: CompareContext):
+        uel = np.loadtxt(self.uel_csv, delimiter=",")
+        ref = np.loadtxt(self.ref_csv, delimiter=",")
+        return {
+            "S11": ChannelData(expected=ref[:, 0], actual=uel[:, 0]),
+            "S33": ChannelData(
+                expected=ref[:, 2], actual=uel[:, 2],
+                extra_stats={"hydrostatic_shift": float(uel[:, 2].mean())},
+            ),
+        }
+```
+
+Config (per-channel tolerances routed by name; unlisted channels use `default_channel`):
+
+```json
+{
+  "type": "uelstress",
+  "uel_csv": "out/uel.csv",
+  "ref_csv": "out/native.csv",
+  "channels": {
+    "S33": {"atol": 600.0, "data_filter": "abs>1e-12"}
+  },
+  "default_channel": {"rtol": 1e-5, "atol": 1e-8}
+}
+```
+
+**Verdict and result semantics**:
+- Each channel runs `compare_numeric` independently (symmetric tolerance `|a-b| <= max(rtol*max(|a|,|b|), atol)`)
+- `identical = all channels pass`; one compareSpec is still one assertion
+- Difference positions carry the channel prefix (`channel S33`); `error_stats` nests by channel name
+- The report shows per-channel pass/fail, tolerances and stats; channel differences are trimmed per channel in JSON output
+- Custom error metrics ride along via `ChannelData.extra_stats`, kept in a SEPARATE namespace (`ChannelResult.extra_stats`) that can never overwrite framework canonical metrics (`max_abs_error`, `total`, ...); the report renders both namespaces per channel
+- The verdict itself cannot be altered by the plugin — custom verdicts belong to the autonomous lane
+
+#### Data Lane: Built-in `script_extract` Type (Zero-Modification Script Access)
+
+Existing analysis scripts need no Python plugin wrapper: the script runs as a
+subprocess and prints a JSON channel payload on stdout; each channel then
+enters the framework-owned tolerance pipeline described above.
+
+```json
+{
+  "type": "script_extract",
+  "script": "extract_channels.py",
+  "args": ["--frame", "10"],
+  "cwd": "case/subdir",
+  "channels": {"S33": {"atol": 600.0}},
+  "default_channel": {"rtol": 1e-5, "atol": 1e-8},
+  "timeout": 600
+}
+```
+
+**stdout JSON protocol**:
+
+```json
+{
+  "channels": {
+    "S11": {"expected": [1.0, 2.0], "actual": [1.0, 2.0]},
+    "S33": {"expected": [...], "actual": [...], "extra_stats": {"asymmetry": 2e-13}}
+  }
+}
+```
+
+**Error semantics**: non-zero exit code, timeout, malformed JSON, a missing
+`channels` key, or a channel missing `expected`/`actual` arrays → always a
+comparison error (never a silent pass). `actual`/`baseline` (if configured)
+are appended as trailing script arguments with baseline first; both optional.
+
+#### Autonomous Lane: Full-Verdict Plugin
+
+Use case: custom verdict logic. The plugin implements `compare(ctx)` and
+returns the result directly.
+
+```python
+# comparators/my_analysis_comparator.py
+from symtest.file_comparator import ComparatorBase, CompareContext, ComparisonResult, Difference
+
+class MyAnalysisComparator(ComparatorBase):
+    path_params = ("script", "case_dir")
+
+    def __init__(self, script="", case_dir=None, pass_threshold=1e-6):
+        super().__init__()   # strict: undeclared/misspelled config keys fail loudly
+        self.script = script      # workspace-resolved by the framework before construction
+        self.case_dir = case_dir
+        self.pass_threshold = pass_threshold
+
+    def compare(self, ctx: CompareContext) -> ComparisonResult:
+        result = ComparisonResult(
+            file1=ctx.baseline,   # stays None when there is no file input — no fake ""
+            file2=ctx.actual,
+        )
+        # ... run analysis, parse metrics ...
+        result.identical = True  # or False + differences
+        result.error_stats = {"full_rel": 8e-8}   # free-form dict, generic rendering
+        return result
+```
+
+`ctx` fields (invocation-level context only): `workspace` / `actual` /
+`baseline` (`None` when absent) / `params` (file-lane window ranges) /
+`error_analysis`.  The single authoritative copy of comparator configuration
+lives in constructor-captured state — `ctx` never duplicates it.
+
+#### Built-in `script` Type Comparator (Autonomous Lane Out of the Box)
 
 For quickly integrating standalone analysis scripts without writing a comparator class:
 
@@ -2026,8 +2186,8 @@ For quickly integrating standalone analysis scripts without writing a comparator
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `script` | Yes | — | Script path (relative to workspace or absolute) |
-| `actual` | No | — | First file argument passed to the script |
-| `baseline` | No | — | Second file argument passed to the script |
+| `actual` | No | — | File argument passed to the script (trailing second slot) |
+| `baseline` | No | — | File argument passed to the script (trailing first slot) |
 | `cwd` | No | — | Script working directory |
 | `interpreter` | No | `sys.executable` | Python interpreter |
 | `pass_exit_code` | No | `0` | Exit code considered a pass |
@@ -2043,15 +2203,15 @@ For quickly integrating standalone analysis scripts without writing a comparator
 
 The script's stdout and stderr are fully captured in the `Comparator Output` section, displayed up to 20 lines in the rendered report.
 
-#### Method 3: Manual Registration (Programmatic)
+#### Manual Registration (Programmatic)
 
 ```python
-from symtest.file_comparator import ComparatorFactory
-from symtest.file_comparator.base_comparator import BaseComparator
+from symtest.file_comparator import ComparatorFactory, ComparatorBase, CompareContext
+from symtest.file_comparator.result import ComparisonResult
 
-class FooComparator(BaseComparator):
-    # Implement read_content / compare_content etc.
-    pass
+class FooComparator(ComparatorBase):
+    def compare(self, ctx: CompareContext) -> ComparisonResult:
+        ...
 
 ComparatorFactory.register_comparator("foo", FooComparator)
 
@@ -2061,7 +2221,7 @@ comparator = ComparatorFactory.create_comparator("foo")
 
 #### Specialized Plugin Example: Hourglass Tangent Stiffness Analysis
 
-`examples/plugins/hourglass_tangent_comparator.py` is a complete workspace plugin example demonstrating how to integrate a dedicated `analyze_*_tangent.py` analysis script into the framework:
+`examples/plugins/hourglass_tangent_comparator.py` is a complete autonomous-lane workspace plugin example demonstrating how to integrate a dedicated `analyze_*_tangent.py` analysis script into the framework:
 
 ```json
 {
@@ -2076,6 +2236,7 @@ comparator = ComparatorFactory.create_comparator("foo")
 **Features**:
 - Calls the analysis script via subprocess (**zero changes** to analyze code), parses `RESULT:` lines and numerical metrics like `full_rel`/`aa_rel`/`hh_rel`/`asymmetry` from stdout using regex
 - Constructs a structured `ComparisonResult`: `identical` determined by `full_rel < pass_threshold`; `differences` lists exceeded metrics; `error_stats` contains all numeric values
+- `path_params` declares `script`/`case_dir`, resolved against the workspace by the framework
 - Script stdout goes into the `Comparator Output` section
 
 Usage: copy the plugin file into your workspace's `comparators/` directory for auto-discovery — no framework code changes needed.

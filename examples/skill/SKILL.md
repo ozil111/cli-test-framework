@@ -4,11 +4,13 @@ description: >-
   This skill should be used when writing functional tests for CLI programs,
   defining acceptance criteria, or using the symtest-cli / symtest framework.
   It covers JSON/YAML test case authoring, multi-step sequence tests,
-  numerical golden file comparison (HDF5/CSV/XML), parallel execution, and
-  targeted re-runs with --last-failed and --resume. Trigger when the task
-  involves creating test configurations for command-line tools, writing
-  acceptance specs as structured assertions, or running regression tests
-  with symtest.
+  numerical golden file comparison (HDF5/CSV/XML), comparator plugin
+  development (three-lane architecture: file / data-channel / autonomous),
+  parallel execution, and targeted re-runs with --last-failed and --resume.
+  Trigger when the task involves creating test configurations for
+  command-line tools, writing acceptance specs as structured assertions,
+  authoring custom comparator plugins, or running regression tests with
+  symtest.
 ---
 
 # CLI Test Framework (symtest-cli)
@@ -32,6 +34,8 @@ legacy configs with `symtest migrate`.
 - Writing functional/regression tests for CLI programs
 - Defining machine-readable acceptance criteria for a feature
 - Comparing numerical output files (HDF5, CSV) against golden baselines
+- Authoring custom comparator plugins (data-channel extractors, analysis
+  comparators) or wiring existing analysis scripts into comparisons
 - Setting up parallel test execution or CI integration
 
 ## Core Workflows
@@ -88,15 +92,13 @@ starting point.
    ]
    ```
 2. Choose the comparator `type`: `text`, `json`, `csv`, `xml`, `h5`, `binary`,
-   or `script`. Omit `type` to auto-detect by file extension.
-   If the `type` is not one of the above, it refers to a **user-defined
-   comparator**. User-defined comparators are loaded from
+   `script`, or `script_extract`. Omit `type` to auto-detect by file
+   extension. If the `type` is not one of the above, it refers to a
+   **user-defined comparator**. User-defined comparators are loaded from
    `<workspace>/comparators/*_comparator.py`. When troubleshooting a
    custom `type`, check that directory first — verify the plugin file
    exists and its class imports succeed (use `from symtest.file_comparator...`,
-   not other package names). To author a new one, start from
-   `assets/templates/my_analysis_comparator.py` (see
-   `references/user_manual.md` → "Custom File Comparator").
+   not other package names). To author a new one, see Workflow 4.
 3. Set numerical tolerance: `rtol` (relative) and `atol` (absolute).
 4. Use `--error-analysis` to get full statistics (max error, RMSE, etc.) on
    failure.
@@ -105,6 +107,60 @@ starting point.
    symtest run test_cases.json --update-baseline --yes
    ```
    Always review updated baselines and keep them in version control.
+
+### Workflow 4: Authoring Comparator Plugins
+
+Custom comparators follow a **three-lane architecture** around the root
+contract `ComparatorBase.compare(ctx) -> ComparisonResult`. Choose the lane
+by verdict ownership:
+
+1. **Data lane** (`ExtractorComparator`) — plain numeric arrays compared with
+   rtol/atol. The plugin only EXTRACTS per-channel data
+   (`extract(ctx) -> {name: ChannelData}`); the framework owns the verdict
+   with per-channel tolerances (`channels` / `default_channel` config keys).
+   Start from `assets/templates/my_channel_extractor.py`. For existing
+   scripts with zero plugin code, use the built-in `script_extract` type:
+   the script prints a JSON channel payload on stdout (protocol and error
+   semantics in `assets/templates/extract_channels_script.py`).
+2. **Autonomous lane** (extend `ComparatorBase` directly) — custom verdict
+   logic (composite thresholds, label parsing, sign/asymptotic checks).
+   Implement `compare(ctx)`; populate `identical` / `differences` /
+   `error_stats` / `command_output`. Start from
+   `assets/templates/my_analysis_comparator.py`.
+3. **File lane** (`FileComparator`) — only for comparing two same-kind files
+   (the built-in text/json/csv/xml/h5/binary comparators); rarely needed in
+   workspaces.
+
+Hard rules for all lanes:
+
+- **Strict configuration**: declare constructor parameters explicitly.
+  Unknown/misspelled compareSpec keys fail loudly at construction (the error
+  names the comparator type and its supported parameters). Free-form config
+  is an explicit plugin opt-in (its own `**params` catch-all), never a
+  framework default. Put plugin-owned config under the `options` compareSpec
+  key to keep the core schema generic.
+- **Path ownership**: declare path-like constructor params in the
+  `path_params` class attribute; the framework resolves them against the
+  workspace BEFORE construction, so constructor state already holds absolute
+  paths. NEVER resolve paths against `os.getcwd()` (unreliable under
+  parallel/process execution).
+- **One source of truth**: comparator configuration lives only in
+  constructor-captured state; `CompareContext` carries invocation-level
+  context (workspace, actual/baseline, window ranges), never a second copy
+  of configuration.
+- **Naming**: file `*_comparator.py`, class `*Comparator`; optional
+  `comparator_type` class attribute overrides the registered type name;
+  abstract base classes are never registered.
+- **Result semantics**: data-lane plugins cannot alter pass/fail
+  (framework-owned). Plugin metrics ride along via `ChannelData.extra_stats`
+  — a SEPARATE namespace that can never overwrite canonical stats
+  (`max_abs_error`, `total`, ...). Channel results are rendered exclusively
+  from `ComparisonResult.channels`. Custom VERDICT requires the autonomous
+  lane; autonomous comparators without file inputs leave
+  `file1`/`file2` as `None` (no fake empty strings).
+
+Full details (config examples, JSON protocol, result semantics, report
+rendering): `references/user_manual.md` → "自定义文件比较器".
 
 ## Decision Guide
 
@@ -118,6 +174,8 @@ starting point.
   (`execution.command` form).
 - **Step sequence** (`execution.steps`): multiple ordered commands, fail-fast.
   Use when output of step N is input to step N+1.
+- The two forms are mutually exclusive: declaring both `command`/`args` and
+  `steps` in one `execution` block is a configuration error.
 
 ### When to use `import` (config splitting)
 - When the config grows large (>30 cases) or cases naturally group by module.
@@ -225,6 +283,11 @@ For a complete project entry script with all CLI options, copy and adapt
 - `assets/templates/test_cases_golden_file.json` — Numerical golden file test
   with HDF5/CSV comparison.
 - `assets/templates/my_analysis_comparator.py` — Minimal runnable template
-  for a user-defined custom comparator plugin.
+  for an autonomous-lane custom comparator plugin (custom verdict).
+- `assets/templates/my_channel_extractor.py` — Data-lane channel extractor
+  template (framework-owned per-channel tolerance verdict).
+- `assets/templates/extract_channels_script.py` — Script template for the
+  built-in `script_extract` type (JSON channel payload protocol, zero plugin
+  code).
 - `assets/full_runner_example.py` — Full project entry script with all CLI
   options, report generation, and JUnit XML output.
