@@ -9,10 +9,10 @@
 形态说明：
 - ``to_dict()`` 输出 v2 分层配置形态（execution/expected/scheduling），
   可直接写入配置文件（TUI 保存路径即消费方）；
-- 构造函数保留平铺关键字参数作为 legacy 语义归一入口（TUI 编辑路径、
-  迁移等价性测试的 legacy 侧复用它）；
+- 构造路径唯一：DSL 平铺关键字参数（配置解析、TUI 编辑路径、迁移
+  等价性测试共用同一入口）；子 Spec 是内部数据结构，不是构造参数；
 - ``case.command`` / ``case.expected`` / ``case.env`` ... 等属性直通访问器
-  映射到子 Spec，使现有 ``case.xxx`` 访问点零改动；
+  是唯一的公开读写接口，映射到子 Spec；
 - 序列步骤为 :class:`TestStep`（execution + expectation 分层）；
   ``TestStep.from_flat`` 是 DSL 平铺字段的归一入口。
 """
@@ -168,14 +168,13 @@ class TestCase:
         xfail_quiet: bool = False,
         depends_on: Optional[List[str]] = None,
         env: Optional[Dict[str, str]] = None,
-        execution: Optional[ExecutionSpec] = None,
-        expectation: Optional[ExpectationSpec] = None,
-        scheduling: Optional[SchedulingSpec] = None,
     ) -> None:
         """构造 TestCase。
 
-        平铺关键字参数（v1 形态）在 ``execution/expectation/scheduling``
-        未显式给出时归一存入对应子 Spec；显式传入子 Spec 时平铺参数被忽略。
+        构造路径唯一：DSL 平铺关键字参数归一存入对应子 Spec。
+        传入 ``execution=`` / ``expectation=`` / ``scheduling=`` 会被
+        TypeError 拒绝——子 Spec 是内部数据结构，不是构造参数，
+        不存在"平铺参数被静默忽略"的第二语义。
         """
         self.name = name
         self.description = description
@@ -184,7 +183,7 @@ class TestCase:
         self.xfail_reason = xfail_reason
         self.xfail_quiet = xfail_quiet
 
-        self.execution = execution if execution is not None else ExecutionSpec(
+        self.execution = ExecutionSpec(
             name=name,
             command=command,
             args=args if args is not None else [],
@@ -193,10 +192,10 @@ class TestCase:
             env=env if env else {},
             steps=steps,
         )
-        self.expectation = expectation if expectation is not None else ExpectationSpec(
+        self.expectation = ExpectationSpec(
             assertions=expected if expected else {},
         )
-        self.scheduling = scheduling if scheduling is not None else SchedulingSpec(
+        self.scheduling = SchedulingSpec(
             depends_on=depends_on if depends_on else [],
             resources=resources,
         )

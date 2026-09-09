@@ -209,7 +209,7 @@ PathResolver 解析（系统命令直通、shell builtin 平台包装、复合�
 ### 6.3 工厂与插件发现
 
 - `file_type` 取值：`text` / `json` / `csv` / `xml` / `h5` / `binary` / `script` / `script_extract`；工厂按类型分发，支持动态注册与全局 reset（测试用）
-- 插件发现四处来源：内置 `*_comparator.py` 自动发现、`workspace/comparators/` 自动扫描、`--plugin-dir` CLI 参数、`CLITEST_PLUGIN_DIRS` 环境变量（供进程模式 worker 使用）
+- 插件发现四处来源：内置 `*_comparator.py` 自动发现、`workspace/comparators/` 自动扫描、`--plugin-dir` CLI 参数、`CLITEST_PLUGIN_DIRS` 环境变量（用户声明的输入；框架只读，进程模式 worker 经进程池 initializer 显式接收插件目录，框架从不修改 `os.environ`）
 - 命名约定：`*_comparator.py` + `*Comparator` 类名；可用类属性 `comparator_type` 显式指定类型名（如 `script_extract`）；抽象基类自动跳过注册
 - 配置传递与严格校验：`actual`/`baseline`/`type`/`options` 之外的键转发给比较器构造函数（kwargs）；构造器参数是**严格**的——未声明的键（拼写错误）在构造时大声失败并给出支持参数清单。`options` 是框架持有的插件配置命名空间（并入构造参数，显式顶层键优先），核心 schema 不为单个插件增加专属字段；`channels`/`default_channel` 属数据泳道框架结构
 

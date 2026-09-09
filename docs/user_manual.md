@@ -195,7 +195,7 @@ test_cases:
             "name": "D",
             "execution": { "command": "python", "args": ["merge.py"] },
             "scheduling": { "depends_on": ["A", "B", "C"] },
-            "expected": {"return_code": 0, "compare_files": [{"file": "output.h5", "type": "hdf5"}]}
+            "expected": {"return_code": 0, "compare_files": [{"file": "output.h5", "type": "h5"}]}
         }
     ]
 }
@@ -233,7 +233,7 @@ test_cases:
       return_code: 0
       compare_files:
         - file: output.h5
-          type: hdf5
+          type: h5
 ```
 
 **调度语义**：
@@ -2011,7 +2011,7 @@ your-workspace/
 symtest run test_config.json --plugin-dir ./extra_plugins
 ```
 
-插件也会通过环境变量 `CLITEST_PLUGIN_DIRS` 自动继承到 process 模式子进程。
+也可通过环境变量 `CLITEST_PLUGIN_DIRS` 声明额外插件目录（框架只读取该变量，从不修改进程环境变量）；process 模式下框架通过进程池 initializer 把插件目录显式传给子进程，无需环境变量中转。
 
 **命名约定**：
 - 文件名必须以 `_comparator.py` 结尾（如 `my_analysis_comparator.py`）
