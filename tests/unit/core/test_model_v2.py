@@ -284,7 +284,7 @@ class TestSerialization:
         assert not hasattr(tc, "to_execution_dict")
 
     def test_deepcopy_works(self):
-        """TUI duplicate_case 依赖 deepcopy。"""
+        """TestCase 支持深拷贝（调用方复制用例的通用前提）。"""
         tc = TestCase(
             name="t",
             steps=[TestStep.from_flat(command="a", args=[], expected={})],

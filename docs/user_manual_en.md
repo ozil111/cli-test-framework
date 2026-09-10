@@ -8,7 +8,7 @@
 - [Configuration Splitting](#configuration-splitting)
 - [Configuration Inheritance](#configuration-inheritance)
 - [Configuration Validation](#configuration-validation)
-- [TUI Interactive Manager](#tui-interactive-manager)
+- [Cross-File Case Search](#cross-file-case-search-find)
 - [Running Tests](#running-tests)
 - [Project Entry Script](#project-entry-script)
 - [Placeholders (Variable Substitution)](#placeholders-variable-substitution)
@@ -38,7 +38,7 @@ YAML support is available as an optional dependency:
 pip install "symtest-cli[yaml]"
 ```
 
-Install YAML, TUI, and all other optional features together:
+Install YAML and all other optional features together:
 
 ```bash
 pip install "symtest-cli[all]"
@@ -623,10 +623,6 @@ The `setup` block uses only global `--var` substitution (no case-level variables
 - `abstract` cases are not counted as executable
 - `extends` cases skip required-field checks (content comes from parent)
 
-### TUI Editing Limitation
-
-> **Note**: The TUI does not currently support editing inherited cases. Expanded inherited cases can be viewed and run in the TUI, but please edit the JSON/YAML source files directly to make modifications.
-
 ## Configuration Validation
 
 The `validate` command checks configuration file correctness without running tests, suitable for CI pipeline config validation.
@@ -677,127 +673,38 @@ On error:
   [FAIL] Import target not found: /project/cases/nonexistent.json
 ```
 
-## TUI Interactive Manager
+## Cross-File Case Search (find)
 
-When a large project splits cases across many JSON/YAML sub-configurations, locating cases and reviewing scenario coverage across files becomes difficult. The TUI (Terminal User Interface) provides one view over all imported configurations for browsing, global search, and coverage review, with editing and case execution available when needed. It is an aid for large suites, not a requirement for normal test execution.
+When a large project splits cases across many JSON/YAML sub-configurations,
+locating cases and reviewing scenario coverage across files becomes difficult.
+`symtest find` automatically expands all `import` references of the main
+config and searches over the unified, expanded case set — a lightweight,
+scriptable way to locate cases.
 
-### Installation
-
-The TUI depends on the `textual` library and is provided as an optional, on-demand dependency:
-
-```bash
-# Install with TUI support
-pip install "symtest-cli[tui]"
-
-# Or install textual separately on top of an existing framework
-pip install textual
-```
-
-If `textual` is not installed and you run `symtest tui`, the framework displays a friendly installation prompt.
-
-### Launching
+### Usage
 
 ```bash
-# Open TUI to edit test cases
-symtest tui test_cases.json
+# Default substring mode (case-insensitive); matches name/command/args/tags/description
+symtest find main_config.json "login"
 
-# YAML files are also supported
-symtest tui test_cases.yaml
+# Regex mode
+symtest find main_config.json "log.*in" --mode regex
 
-# Specify working directory
-symtest tui test_cases.json --workspace /path/to/project
+# Fuzzy mode (tolerates typos and abbreviations, ranked by relevance)
+symtest find main_config.json "lgin" --mode fuzzy
 
-# Open a main config with imports (auto-expands all cases from sub-files)
-symtest tui main_config.json
+# Combined with tag filtering (repeatable, OR relationship)
+symtest find main_config.json "login" --tag smoke
+
+# JSON output (for AI/scripts)
+symtest find main_config.json "login" --output-format json
 ```
 
-The TUI auto-expands `import` references via the [Configuration Splitting](#configuration-splitting) mechanism at startup, loading all cases into the interface for unified management.
+Omitting the pattern lists all cases. Text output columns: index, name,
+command, tags, timeout, mode (`single` / `steps`).
 
-### Interface Overview
-
-The TUI shows the **Test Case List main screen** on startup:
-
-- **Top status bar**: Current filename, total case count
-- **Search bar**: Press `/` to focus the search box; supports substring/fuzzy/regex modes
-- **Case table**: Six columns (Index, Name, Command, Tags, Timeout, Mode); keyboard-navigable
-- **Bottom shortcut bar**: Shows all available actions
-
-### Keyboard Shortcuts
-
-| Shortcut | Function |
-|---|---|
-| `a` | Add a new test case |
-| `e` | Edit selected test case |
-| `d` | Delete selected test case |
-| `u` | Duplicate selected test case (name gets `_copy` suffix) |
-| `r` | Run selected test case and display results |
-| `F6` / `Ctrl+S` | Save changes to file |
-| `/` | Focus search box |
-| `Esc` | Clear search, restore full list |
-| `Alt+S` | Toggle substring search mode (case-insensitive) |
-| `Alt+F` | Toggle fuzzy search mode (tolerates typos and abbreviations) |
-| `Alt+R` | Toggle regex search mode |
-| `q` / `Ctrl+Q` | Quit |
-| `↑` / `↓` / `j` / `k` | Move cursor up/down |
-
-Search matches against `name`, `command`, `args`, `tags`, `description` and other fields simultaneously; matches are highlighted in the table.
-
-### Editing a Test Case
-
-Select a case and press `e` to enter edit mode. The edit form has two modes based on the case type:
-
-#### Single-Command Mode
-
-The edit form includes the following fields:
-
-| Field | Description |
-|---|---|
-| `Name` | Case name (required) |
-| `Command` | Command to execute |
-| `Args` | Command arguments, one per line |
-| `Tags` | Tag list, one per line |
-| `Description` | Case description |
-| `Timeout` | Timeout in seconds |
-| Expected | Nested sub-form for expected assertions (see below) |
-
-#### Step Sequence Mode
-
-When a case contains multiple ordered steps, switch to this mode. Each step has its own `Command`, `Args`, `Expected`, and `Timeout`. Supports adding, deleting, editing, and reordering steps.
-
-Switch between modes via keyboard shortcuts within the edit interface; a confirmation prompt appears to prevent data loss.
-
-### Editing the `expected` Field
-
-The `expected` field is a nested dictionary; the editor provides structured input:
-
-| Field | Input Method |
-|---|---|
-| `return_code` | Numeric input box |
-| `output_contains` | Multi-line text input, one match string per line |
-| `output_matches` | Regex text input |
-| `compare_files` | One JSON object per line, e.g., `{"actual":"out.txt","baseline":"base.txt","type":"text"}` |
-
-Beyond the known fields above, you can add custom key=value pairs via the `+ Add` button (value is a string or JSON text). See [Test Case Definition](#test-case-definition) for more details.
-
-### Running a Test Case
-
-Select a case in the list and press `r` to invoke the framework execution engine and run it in real time. A result panel pops up showing:
-
-- Pass/fail status
-- Return code
-- Duration
-- Command output (stdout/stderr)
-
-The result panel is display-only and does not modify the config file.
-
-### Saving
-
-All add/edit/delete operations on test cases are performed **in memory** and are not immediately written to disk.
-
-- Press `F6` or `Ctrl+S` to **save**: writes all current cases back to the original config file.
-- Use `save_as` to **save as** a new file (via the interface menu).
-
-Unsaved changes prompt a confirmation dialog when quitting the TUI.
+Exit codes follow grep semantics: 0 = match found, 1 = no match,
+2 = config loading error — convenient for scripting.
 
 ## Running Tests
 

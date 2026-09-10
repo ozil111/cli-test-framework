@@ -36,14 +36,11 @@ setup(
     ],
     extras_require={
         "yaml": ["PyYAML>=6.0"],
-        "tui": ["textual>=0.40.0"],
         "all": [
             "PyYAML>=6.0",
-            "textual>=0.40.0",
         ],
         "dev": [
             "PyYAML>=6.0",
-            "textual>=0.40.0",
             "pytest>=7.0",
             "pytest-asyncio>=0.21.0",
             "pytest-cov>=4.0",

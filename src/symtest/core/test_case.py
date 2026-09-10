@@ -8,8 +8,8 @@
 
 形态说明：
 - ``to_dict()`` 输出 v2 分层配置形态（execution/expected/scheduling），
-  可直接写入配置文件（TUI 保存路径即消费方）；
-- 构造路径唯一：DSL 平铺关键字参数（配置解析、TUI 编辑路径、迁移
+  可直接写入配置文件；
+- 构造路径唯一：DSL 平铺关键字参数（配置解析、迁移
   等价性测试共用同一入口）；子 Spec 是内部数据结构，不是构造参数；
 - ``case.command`` / ``case.expected`` / ``case.env`` ... 等属性直通访问器
   是唯一的公开读写接口，映射到子 Spec；
@@ -57,8 +57,7 @@ class TestStep:
 
     DSL 形态不变（step dict：``command/args/expected/timeout/retry_count``），
     由 parser / ``from_flat`` 负责归一；本类型提供平铺直通访问器，使
-    duck-typing 消费点（``_step_attr``、``compute_config_hash``、TUI steps
-    编辑器）零改动。
+    duck-typing 消费点（``_step_attr``、``compute_config_hash`` 等）零改动。
     """
     __test__ = False
     execution: ExecutionSpec

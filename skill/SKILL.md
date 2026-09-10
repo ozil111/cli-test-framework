@@ -70,7 +70,8 @@ legacy configs with `symtest migrate`.
 
 For all available fields and their meanings, consult
 `references/field_reference.md`. For complete usage details (setup plugins,
-TUI, resource scheduling, etc.), consult `references/user_manual.md`.
+case search via `symtest find`, resource scheduling, etc.), consult
+`references/user_manual.md`.
 
 ### Workflow 2: Numerical Golden File Testing
 
@@ -271,7 +272,7 @@ For a complete project entry script with all CLI options, copy and adapt
 - `references/field_reference.md` — Quick field lookup table for test case
   configuration. Consult this when filling in or verifying config fields.
 - `references/user_manual.md` — Complete framework manual covering all
-  features (setup plugins, TUI, resource scheduling, history, custom
+  features (setup plugins, resource scheduling, history, custom
   comparators, extension development). Consult for advanced or uncommon
   features not covered in this file.
 
