@@ -55,7 +55,7 @@ legacy configs with `symtest migrate`.
    - `return_code` — expected exit code (default 0).
    - `output_contains` — list of strings that must appear in stdout.
    - `output_matches` — regex pattern for stdout.
-   - `compare_files` — file comparison assertions (see Workflow 3).
+   - `compare_files` — file comparison assertions (see Workflow 2).
 4. Add metadata: `tags` for filtering, `description` for context. Put
    `timeout` for long-running commands and `retry_count` for flaky tests
    inside `execution`; declare `depends_on`/`resources` in `scheduling`.
@@ -99,7 +99,7 @@ starting point.
    `<workspace>/comparators/*_comparator.py`. When troubleshooting a
    custom `type`, check that directory first — verify the plugin file
    exists and its class imports succeed (use `from symtest.file_comparator...`,
-   not other package names). To author a new one, see Workflow 4.
+   not other package names). To author a new one, see Workflow 3.
 3. Set numerical tolerance: `rtol` (relative) and `atol` (absolute).
 4. Use `--error-analysis` to get full statistics (max error, RMSE, etc.) on
    failure.
@@ -109,7 +109,7 @@ starting point.
    ```
    Always review updated baselines and keep them in version control.
 
-### Workflow 4: Authoring Comparator Plugins
+### Workflow 3: Authoring Comparator Plugins
 
 Custom comparators follow a **three-lane architecture** around the root
 contract `ComparatorBase.compare(ctx) -> ComparisonResult`. Choose the lane
@@ -161,7 +161,7 @@ Hard rules for all lanes:
   `file1`/`file2` as `None` (no fake empty strings).
 
 Full details (config examples, JSON protocol, result semantics, report
-rendering): `references/user_manual.md` → "自定义文件比较器".
+rendering): `references/user_manual.md` → "Custom File Comparator".
 
 ## Decision Guide
 
